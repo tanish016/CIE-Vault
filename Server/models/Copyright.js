@@ -1,0 +1,70 @@
+const mongoose = require("mongoose");
+
+const copyrightSchema = new mongoose.Schema(
+  {
+    student: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    mentor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    filingNumber: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    abstract: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    college: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    portalLogin: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    portalPassword: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    fileUrl: {
+      type: String,
+      default: "",
+    },
+    fileName: {
+      type: String,
+      default: "",
+    },
+    extractedTitle: {
+      type: String,
+      default: "",
+    },
+    extractedFilingNumber: {
+      type: String,
+      default: "",
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model("Copyright", copyrightSchema);
