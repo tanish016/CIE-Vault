@@ -55,6 +55,22 @@ const copyrightSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    storageFileName: {
+      type: String,
+      default: "",
+    },
+    fileIv: {
+      type: String,
+      default: "",
+    },
+    fileAuthTag: {
+      type: String,
+      default: "",
+    },
+    isEncrypted: {
+      type: Boolean,
+      default: false,
+    },
     extractedTitle: {
       type: String,
       default: "",

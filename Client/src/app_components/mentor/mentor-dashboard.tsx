@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from "react"
+import React, { useMemo, useState } from "react"
 import { useAuth } from "@/context/auth-context"
 import useSWR from "swr"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,6 +20,8 @@ import {
   Clock,
   CheckCircle,
   MessageSquare,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react"
 import { Navbar } from "../navbar"
 
@@ -47,6 +49,8 @@ interface CopyrightCardData {
 
 export function MentorDashboard() {
   const { user } = useAuth()
+  const [expandedStudentKey, setExpandedStudentKey] = useState<string | null>(null)
+  const [focusedCopyrightId, setFocusedCopyrightId] = useState<string | null>(null)
 
   // Fetching data with 5s polling
   const {
@@ -63,6 +67,38 @@ export function MentorDashboard() {
 
   const myStudents: CopyrightCardData[] = studentsData?.copyrights || []
   const globalResearch: CopyrightCardData[] = globalData?.copyrights || []
+
+  const studentGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string
+        name: string
+        email: string
+        college: string
+        items: CopyrightCardData[]
+      }
+    >()
+
+    myStudents.forEach((copyright) => {
+      const student = copyright.student
+      const key = student?._id || student?.email || student?.name || copyright._id
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          name: student?.name || "Unknown Student",
+          email: student?.email || "",
+          college: student?.college || "",
+          items: [],
+        })
+      }
+
+      groups.get(key)?.items.push(copyright)
+    })
+
+    return Array.from(groups.values())
+  }, [myStudents])
 
   // Memoized Stats
   const stats = useMemo(() => {
@@ -84,6 +120,17 @@ export function MentorDashboard() {
       .join("")
       .toUpperCase()
       .slice(0, 2)
+
+  const handleTitleClick = (item: CopyrightCardData) => {
+    setFocusedCopyrightId(item._id)
+
+    requestAnimationFrame(() => {
+      const card = document.getElementById(`copyright-card-${item._id}`)
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "start" })
+      }
+    })
+  }
 
   return (
     <>
@@ -161,15 +208,87 @@ export function MentorDashboard() {
               description="New students will appear here once they list you as their mentor."
             />
           ) : (
-            <div className="flex flex-col gap-4">
-              {myStudents.map((c) => (
-                <CopyrightCard
-                  key={c._id}
-                  copyright={c}
-                  accessLevel="full"
-                  onStatusUpdate={() => mutateStudents()}
-                />
-              ))}
+            <div className="space-y-5">
+              <Card className="border-border shadow-sm">
+                <CardHeader className="pb-3">
+                  <h2 className="text-base font-semibold">Student Title Explorer</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Click a student name to see all titles. Click any title to jump to full details below.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="max-h-[360px] pr-3">
+                    <div className="space-y-3">
+                      {studentGroups.map((group) => {
+                        const isExpanded = expandedStudentKey === group.key
+
+                        return (
+                          <div key={group.key} className="rounded-lg border bg-card p-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedStudentKey((prev) =>
+                                  prev === group.key ? null : group.key
+                                )
+                              }
+                              className="flex w-full items-center justify-between gap-3 text-left"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-foreground">{group.name}</p>
+                                <p className="truncate text-xs text-muted-foreground">{group.email}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className="text-xs">
+                                  {group.items.length} title{group.items.length > 1 ? "s" : ""}
+                                </Badge>
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </div>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-3 space-y-2 border-t pt-3">
+                                {group.items.map((item) => (
+                                  <button
+                                    type="button"
+                                    key={item._id}
+                                    onClick={() => handleTitleClick(item)}
+                                    className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                                  >
+                                    <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
+                                    <Badge
+                                      variant={item.status === "approved" ? "default" : item.status === "rejected" ? "destructive" : "outline"}
+                                      className={`capitalize ${item.status === "approved" ? "bg-green-600 text-white hover:bg-green-700" : ""}`}
+                                    >
+                                      {item.status}
+                                    </Badge>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <div className="flex flex-col gap-4">
+                {myStudents.map((c) => (
+                  <div key={c._id} id={`copyright-card-${c._id}`}>
+                    <CopyrightCard
+                      copyright={c}
+                      accessLevel="full"
+                      forceExpanded={focusedCopyrightId === c._id}
+                      onStatusUpdate={() => mutateStudents()}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </TabsContent>

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback } from "react"
+import React, { useState, useMemo, useCallback, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -83,12 +83,19 @@ interface CopyrightCardProps {
   }
   accessLevel: "full" | "external"
   onStatusUpdate?: () => void
+  forceExpanded?: boolean
 }
 
-export function CopyrightCard({ copyright, accessLevel, onStatusUpdate }: CopyrightCardProps) {
+export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExpanded = false }: CopyrightCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<"approved" | "rejected" | null>(null)
+
+  useEffect(() => {
+    if (forceExpanded) {
+      setExpanded(true)
+    }
+  }, [forceExpanded])
 
   // Memoized helpers for performance
   const initials = useMemo(() => 
