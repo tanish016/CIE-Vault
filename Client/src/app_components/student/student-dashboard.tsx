@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import { useState, useMemo } from "react"
+import AccessRequestsList from "./access-requests"
 import { useAuth } from "@/context/auth-context"
 import { UploadForm } from "./upload-form"
 import { CopyrightList } from "./copyright-list"
@@ -72,6 +73,15 @@ export function StudentDashboard() {
       </Card>
 
       <div className="grid gap-8">
+        {/* Access Requests Section */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <Mail className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold tracking-tight">Access Requests</h2>
+          </div>
+          <AccessRequestsList />
+        </section>
+
         {/* Upload Section */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 px-1">

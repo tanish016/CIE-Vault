@@ -23,15 +23,57 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Shield, LogOut, LayoutDashboard, ChevronDown, User, PlusCircle, Bell } from "lucide-react"
+import { Shield, LogOut, LayoutDashboard, ChevronDown, User, PlusCircle, Bell, Eye } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
 function getNotificationContent(n: any) {
+  // Mentor notification when a student submits a new filing (type: request)
   if (n.type === "request") {
     const studentName = n.data?.studentName || "Student"
+    const title = n.data?.title ? `${studentName} submitted "${n.data.title}"` : `${studentName} submitted a new filing`
     return {
-      title: studentName,
-      description: n.data?.message || `A new message from ${studentName}`,
+      title,
+      description: n.data?.message || `A new submission from ${studentName}`,
+    }
+  }
+
+  // Student notifications about access requests on their document
+  if (n.type === "access_request") {
+    const requester = n.data?.requesterName || "A user"
+    const titleText = n.data?.title || "a document"
+    return {
+      title: `${requester} requested access`,
+      description: `${requester} requested access to "${titleText}".`,
+    }
+  }
+
+  // Student notifications when requester cancels their request
+  if (n.type === "request_cancelled") {
+    const requester = n.data?.requesterName || "A user"
+    const titleText = n.data?.title || "a document"
+    return {
+      title: `${requester} cancelled request`,
+      description: `${requester} cancelled their request to view "${titleText}".`,
+    }
+  }
+
+  // Notifications for when access was granted to the requester
+  if (n.type === "access_granted") {
+    const approver = n.data?.approvedBy || "Owner"
+    const titleText = n.data?.title || "a document"
+    return {
+      title: `Access granted by ${approver}`,
+      description: `${approver} approved your request to view "${titleText}". You can now view the document.`,
+    }
+  }
+
+  // Notifications for when access was denied to the requester
+  if (n.type === "access_denied") {
+    const approver = n.data?.approvedBy || "Owner"
+    const titleText = n.data?.title || "a document"
+    return {
+      title: `Access denied by ${approver}`,
+      description: `${approver} denied your request to view "${titleText}".`,
     }
   }
 
@@ -49,6 +91,14 @@ function getNotificationContent(n: any) {
     return {
       title: `Request ${status}`,
       description: `Your request was ${status} by ${mentorName}`,
+    }
+  }
+
+  if (n.type === "published") {
+    const studentName = n.data?.studentName || "Student"
+    return {
+      title: `${studentName} published a document`,
+      description: n.data?.isPublic ? `A document was published and is publicly available.` : `A document was updated.`,
     }
   }
 
@@ -216,6 +266,20 @@ export function Navbar() {
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     <p>Manage your filings</p>
+                  </TooltipContent>
+                </Tooltip>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" asChild className="hidden md:flex">
+                      <Link to="/public">
+                        <Eye className="mr-2 h-4 w-4 text-muted-foreground" />
+                        Public
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Browse public papers</p>
                   </TooltipContent>
                 </Tooltip>
 

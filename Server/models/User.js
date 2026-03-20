@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    avatarUrl: {
+      type: String,
+      default: "",
+    },
     mentor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

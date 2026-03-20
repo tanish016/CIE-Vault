@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
+import { useAuth } from "@/context/auth-context"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -81,7 +82,7 @@ interface CopyrightCardProps {
       college: string
     }
   }
-  accessLevel: "full" | "external"
+  accessLevel: "full" | "external" | "requested"
   onStatusUpdate?: () => void
   forceExpanded?: boolean
 }
@@ -125,7 +126,12 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
   }, [copyright._id, onStatusUpdate])
 
   const isFullAccess = accessLevel === "full"
+  const isRequestedAccess = accessLevel === "requested"
   const isFileHidden = !copyright.fileUrl || copyright.fileUrl.includes("[Hidden")
+  const { user } = useAuth()
+  // Mentors should not see a direct download/view button from the mentor dashboard
+  // Allow mentors to view file when they have full access or when the item was requested/assigned to them (cross-college request)
+  const canViewFile = !isFileHidden && (isFullAccess || isRequestedAccess || user?.role !== "mentor")
 
   return (
     <TooltipProvider>
@@ -172,7 +178,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                 className={`flex items-center gap-1 px-2 py-0.5 ${isFullAccess ? "bg-primary/10 text-primary border-primary/20" : ""}`}
               >
                 {isFullAccess ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
-                {accessLevel === "full" ? "Assigned Mentor" : "External View"}
+                {accessLevel === "full" ? "Assigned Mentor" : isRequestedAccess ? "Requested" : "External View"}
               </Badge>
               <Badge
                 variant={STATUS_CONFIG[copyright.status].variant}
@@ -280,7 +286,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                 {/* File Management */}
                 <section className="space-y-2">
                   <h4 className="text-sm font-semibold">Legal Documentation</h4>
-                  {!isFileHidden ? (
+                  {canViewFile ? (
                     <div className="flex items-center justify-between rounded-lg border bg-card p-2 pr-4 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="rounded bg-primary/10 p-2">
@@ -297,7 +303,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                   ) : (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
                       <XCircle className="h-3.5 w-3.5" /> 
-                      {accessLevel === "external" ? "Protected content" : "No file attached"}
+                      {accessLevel === "external" || user?.role === "mentor" ? "Protected content" : "No file attached"}
                     </div>
                   )}
                 </section>

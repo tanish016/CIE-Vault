@@ -196,6 +196,7 @@ export function MentorDashboard() {
             <Globe className="h-4 w-4" />
             Global Repository
           </TabsTrigger>
+          {/* Requests tab removed per requirement */}
         </TabsList>
 
         <TabsContent value="students" className="mt-0">
@@ -315,6 +316,8 @@ export function MentorDashboard() {
             </div>
           )}
         </TabsContent>
+
+        {/* Requests content removed */}
       </Tabs>
     </div>
     </>

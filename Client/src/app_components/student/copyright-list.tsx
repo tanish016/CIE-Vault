@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react"
-import useSWR from "swr"
+import useSWR, { useSWRConfig } from "swr"
+import { useAuth } from "@/context/auth-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -240,6 +242,16 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
   const [open, setOpen] = useState(false)
   const { data } = useSWR(open ? `/api/copyrights/${copyright._id}/comments` : null, fetcher)
   const comments = data?.comments || []
+  const { user } = useAuth()
+  const { mutate } = useSWRConfig()
+  const [isPublic, setIsPublic] = useState<boolean>((copyright as any).isPublic || false)
+  const [docType, setDocType] = useState<string>((copyright as any).documentType || 'copyright')
+
+  // Update local state if copyright prop changes
+  React.useEffect(() => {
+    setIsPublic((copyright as any).isPublic || false)
+    setDocType((copyright as any).documentType || 'copyright')
+  }, [copyright])
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
@@ -292,6 +304,44 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
             )}
           </div>
         </div>
+
+        {/* If the current user is the owning student and document is approved, allow publish controls */}
+  {user && String(user._id) === String((copyright as any).student) && copyright.status === 'approved' && (
+          <div className="space-y-3 p-2">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+                <span className="text-sm">Make this document public</span>
+              </label>
+              <div className="ml-auto flex items-center gap-2">
+                <Label className="text-sm">Type</Label>
+                <select value={docType} onChange={(e) => setDocType(e.target.value)} className="border rounded px-2 py-1 text-sm">
+                  <option value="copyright">Copyright</option>
+                  <option value="research">Research Paper</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="px-3 py-1 rounded border" onClick={async () => {
+                try {
+                  const res = await fetch(`/api/copyrights/${copyright._id}/publish`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ isPublic, documentType: docType })
+                  })
+                  if (!res.ok) throw new Error('Failed')
+                  // revalidate list
+                  mutate('/api/copyrights')
+                  setOpen(false)
+                } catch (err) {
+                  console.error(err)
+                  alert('Failed to update publish settings')
+                }
+              }}>Save</button>
+            </div>
+          </div>
+        )}
 
         <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>

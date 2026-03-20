@@ -9,6 +9,8 @@ const authRoutes = require("./routes/auth.routes");
 const copyrightRoutes = require("./routes/copyright.routes");
 const mentorRoutes = require("./routes/mentor.routes");
 const notificationRoutes = require("./routes/notification.routes");
+const profileRoutes = require("./routes/profile.routes");
+const publicRoutes = require("./routes/public.routes");
 const errorHandler = require("./middlewares/error-handler");
 
 const app = express();
@@ -34,6 +36,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/copyrights", copyrightRoutes);
 app.use("/api/mentor", mentorRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/public", publicRoutes);
 
 app.use(errorHandler);
 

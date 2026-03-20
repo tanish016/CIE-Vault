@@ -35,7 +35,11 @@ function isAuthorizedForFileAccess(copyrightDoc, user) {
     copyrightDoc.mentor &&
     String(copyrightDoc.mentor) === String(user._id);
 
-  return isOwnerStudent || isAssignedMentor;
+  const isGranted = Array.isArray(copyrightDoc.accessGranted)
+    ? copyrightDoc.accessGranted.some((id) => String(id) === String(user._id))
+    : false;
+
+  return isOwnerStudent || isAssignedMentor || isGranted;
 }
 
 function resolveLegacyFilePath(fileUrl) {
@@ -64,6 +68,8 @@ function mapCopyright(doc) {
     createdAt: doc.createdAt,
     student: doc.student,
     mentor: doc.mentor,
+    isPublic: doc.isPublic || false,
+    documentType: doc.documentType || "copyright",
   };
 }
 
@@ -221,6 +227,11 @@ router.patch("/:id", requireAuth, requireRole("mentor"), async (req, res, next) 
     }
 
     copyrightDoc.status = status;
+    // If a document is not approved, ensure it's not marked public.
+    if (copyrightDoc.status !== 'approved') {
+      copyrightDoc.isPublic = false;
+    }
+
     await copyrightDoc.save();
 
     // Notify the student about the status change
@@ -241,6 +252,63 @@ router.patch("/:id", requireAuth, requireRole("mentor"), async (req, res, next) 
     }
 
     return res.json({ ok: true, status: copyrightDoc.status });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Allow student to mark an approved document as public and set document type
+router.put("/:id/publish", requireAuth, async (req, res, next) => {
+  try {
+    const { isPublic, documentType } = req.body;
+
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) {
+      return res.status(404).json({ error: "Record not found" });
+    }
+
+    // Only the owning student may change publish settings
+    if (String(copyrightDoc.student) !== String(req.user._id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Document must be approved before it can be made public
+    if (copyrightDoc.status !== "approved") {
+      return res.status(400).json({ error: "Only approved documents can be published" });
+    }
+
+    if (typeof isPublic === "boolean") {
+      copyrightDoc.isPublic = isPublic;
+    }
+
+    if (documentType && ["copyright", "research"].includes(documentType)) {
+      copyrightDoc.documentType = documentType;
+    }
+
+    await copyrightDoc.save();
+
+    // Optionally notify mentors or other users when published
+    try {
+      if (copyrightDoc && copyrightDoc.mentor) {
+        await Notification.create({
+          user: copyrightDoc.mentor,
+          type: "published",
+          data: {
+            copyrightId: String(copyrightDoc._id),
+            studentName: req.user.name || "Student",
+            isPublic: copyrightDoc.isPublic,
+          },
+        });
+      }
+    } catch (nerr) {
+      console.error("Failed to create publish notification", nerr);
+    }
+
+    const populated = await Copyright.findById(copyrightDoc._id)
+      .populate("student", "name email college")
+      .populate("mentor", "name email college");
+
+    return res.json({ copyright: mapCopyright(populated) });
   } catch (error) {
     return next(error);
   }
@@ -312,6 +380,168 @@ router.post("/:id/comments", requireAuth, requireRole("mentor"), async (req, res
     }
 
     return res.status(201).json({ comment: populated });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Request access to download/view the PDF. Notifies the owning student.
+router.post("/:id/request-access", requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    // Owners and mentors don't request access
+    if (String(copyrightDoc.student) === String(req.user._id) || String(copyrightDoc.mentor) === String(req.user._id)) {
+      return res.status(400).json({ error: "Already authorized" });
+    }
+
+    // Don't duplicate requests
+  const alreadyRequested = Array.isArray(copyrightDoc.accessRequests) && copyrightDoc.accessRequests.some((id) => String(id) === String(req.user._id));
+    if (alreadyRequested) return res.status(400).json({ error: "Access already requested" });
+
+    copyrightDoc.accessRequests = copyrightDoc.accessRequests || [];
+    copyrightDoc.accessRequests.push(req.user._id);
+    await copyrightDoc.save();
+
+    // Notify the owning student (include document title for clarity)
+    try {
+      await Notification.create({
+        user: copyrightDoc.student,
+        type: "access_request",
+        data: {
+          copyrightId: String(copyrightDoc._id),
+          title: copyrightDoc.title || "Document",
+          requesterId: String(req.user._id),
+          requesterName: req.user.name || "User",
+        },
+      });
+    } catch (nerr) {
+      console.error("Failed to create access request notification", nerr);
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Cancel a previously made access request by the requester
+router.delete("/:id/request-access", requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    const requesterId = String(req.user._id);
+
+    const hadRequest = Array.isArray(copyrightDoc.accessRequests) && copyrightDoc.accessRequests.some((id) => String(id) === requesterId);
+    if (!hadRequest) return res.status(400).json({ error: "No existing access request found" });
+
+    copyrightDoc.accessRequests = (copyrightDoc.accessRequests || []).filter((id) => String(id) !== requesterId);
+    await copyrightDoc.save();
+
+    // Optionally notify the owning student that the requester cancelled the request
+    try {
+      await Notification.create({
+        user: copyrightDoc.student,
+        type: "request_cancelled",
+        data: {
+          copyrightId: String(copyrightDoc._id),
+          requesterId: requesterId,
+          requesterName: req.user.name || "User",
+        },
+      });
+    } catch (nerr) {
+      console.error("Failed to create cancel notification", nerr);
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Owner can list pending access requests
+router.get("/:id/requests", requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id).populate("accessRequests", "name email");
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    // Only owner (student) or mentor can view requests
+    if (String(copyrightDoc.student) !== String(req.user._id) && String(copyrightDoc.mentor) !== String(req.user._id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    return res.json({ requests: copyrightDoc.accessRequests || [] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Check access status for the current user for a specific document
+router.get("/:id/access-status", requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id).lean();
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    const isOwner = String(copyrightDoc.student) === String(req.user._id);
+    const requested = Array.isArray(copyrightDoc.accessRequests) && copyrightDoc.accessRequests.some((id) => String(id) === String(req.user._id));
+    const granted = Array.isArray(copyrightDoc.accessGranted) && copyrightDoc.accessGranted.some((id) => String(id) === String(req.user._id));
+
+    return res.json({ owner: isOwner, requested, granted });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Owner approves or denies a pending access request
+router.put("/:id/approve-access", requireAuth, async (req, res, next) => {
+  try {
+    const { userId, approve } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    // Only the owning student may approve/deny
+    if (String(copyrightDoc.student) !== String(req.user._id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    copyrightDoc.accessRequests = (copyrightDoc.accessRequests || []).filter((id) => String(id) !== String(userId));
+
+    if (approve) {
+      copyrightDoc.accessGranted = copyrightDoc.accessGranted || [];
+      if (!copyrightDoc.accessGranted.some((id) => String(id) === String(userId))) {
+        copyrightDoc.accessGranted.push(userId);
+      }
+    } else {
+      // If denied, ensure not in accessGranted
+      copyrightDoc.accessGranted = (copyrightDoc.accessGranted || []).filter((id) => String(id) !== String(userId));
+    }
+
+    await copyrightDoc.save();
+
+    // Notify the requester about the outcome (include document title)
+    try {
+      await Notification.create({
+        user: userId,
+        type: approve ? "access_granted" : "access_denied",
+        data: {
+          copyrightId: String(copyrightDoc._id),
+          title: copyrightDoc.title || "Document",
+          approvedBy: req.user.name || "Owner",
+        },
+      });
+    } catch (nerr) {
+      console.error("Failed to notify requester", nerr);
+    }
+
+    const populated = await Copyright.findById(copyrightDoc._id)
+      .populate("student", "name email college")
+      .populate("mentor", "name email college");
+
+    return res.json({ copyright: mapCopyright(populated) });
   } catch (error) {
     return next(error);
   }

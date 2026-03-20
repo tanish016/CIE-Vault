@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -68,43 +68,27 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("student");
   const [college, setCollege] = useState("");
-  const [mentorId, setMentorId] = useState("");
-  const [mentors, setMentors] = useState<{ _id: string; name: string; email: string }[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingMentors, setLoadingMentors] = useState(false);
 
-  useEffect(() => {
-    if (role === "student" && college) {
-      setLoadingMentors(true);
-      setMentorId("");
-      // Ensure your backend URL is absolute or proxied in Vite/CRA
-      fetch(`/api/auth/mentors?college=${encodeURIComponent(college)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setMentors(data.mentors || []);
-          setLoadingMentors(false);
-        })
-        .catch(() => {
-          setMentors([]);
-          setLoadingMentors(false);
-        });
-    } else {
-      setMentors([]);
-    }
-  }, [role, college]);
+  // Note: mentor selection removed from registration flow. Students will be assigned mentors later.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
+    if (!college) {
+      setError("Please select your college/institution");
+      setLoading(false);
+      return;
+    }
+
     const result = await register({
       name,
       email,
       password,
       role,
       college,
-      mentor: role === "student" ? mentorId : undefined,
     });
     if ("error" in result && result.error) {
       setError(result.error);
@@ -240,42 +224,7 @@ export function RegisterForm() {
                 </Select>
               </div>
 
-              {role === "student" && college && (
-                <div className="flex flex-col gap-2">
-                  <Label className="text-foreground">Select Mentor</Label>
-                  {loadingMentors ? (
-                    <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading mentors for this college...
-                    </div>
-                  ) : mentors.length > 0 ? (
-                    <Select value={mentorId} onValueChange={setMentorId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose your mentor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {mentors.map((m) => (
-                          <SelectItem key={m._id} value={m._id}>
-                            <span className="flex items-center gap-2">
-                              {m.name}
-                              <Badge variant="secondary" className="text-xs">
-                                {m.email}
-                              </Badge>
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Alert>
-                      <Info className="h-4 w-4" />
-                      <AlertDescription>
-                        No mentors registered for this college yet. You can register and assign one later.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              )}
+              {/* Mentor selection removed — students will be assigned mentors later by admins or via dashboard. */}
 
               <Button type="submit" className="mt-1 w-full" disabled={loading} size="lg">
                 {loading ? (

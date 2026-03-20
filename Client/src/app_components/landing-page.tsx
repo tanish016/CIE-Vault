@@ -78,7 +78,7 @@ const steps = [
     },
 ]
 
-function AnimatedGreeting({ name, role }: { name: string; role?: string }) {
+function AnimatedGreeting({ role }: { role?: string }) {
     // Static one-line greeting per request. Keep CTA button visible.
     const message =
         role === "mentor"
@@ -114,7 +114,7 @@ export default function LandingPage() {
             <section className="relative flex flex-col items-center justify-center px-6 pb-20 pt-16 text-center">
                 <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">
                     <Zap className="mr-1.5 h-3.5 w-3.5" />
-                    Trusted by 500+ researchers
+                    Research preview (early access)
                 </Badge>
 
                 <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
@@ -132,7 +132,7 @@ export default function LandingPage() {
 
                 <div className="mt-8 flex items-center gap-4">
                     {user ? (
-                        <AnimatedGreeting name={user.name} role={user.role} />
+                        <AnimatedGreeting role={user.role} />
                     ) : (
                         <>
                         <Button size="lg" asChild>

@@ -5,6 +5,8 @@ import { LoginForm } from "./app_components/login-form";
 import { RegisterForm } from "./app_components/register-form";
 import { StudentDashboard } from "./app_components/student/student-dashboard";
 import { MentorDashboard } from "./app_components/mentor/mentor-dashboard";
+import Profile from "./app_components/profile";
+import PublicPage from "./app_components/public";
 import { useAuth } from "./context/auth-context";
 
 function GuestOnlyRoute({ children }: { children: ReactElement }) {
@@ -16,6 +18,18 @@ function GuestOnlyRoute({ children }: { children: ReactElement }) {
 
   if (user) {
     return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
+function ProtectedRoute({ children }: { children: ReactElement }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return null;
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
   return children;
@@ -43,6 +57,15 @@ function App() {
       />
       <Route path="/student" element={<StudentDashboard />} />
       <Route path="/mentor" element={<MentorDashboard />} />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/public" element={<PublicPage />} />
     </Routes>
   )
 }

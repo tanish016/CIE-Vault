@@ -79,6 +79,27 @@ const copyrightSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    isPublic: {
+      type: Boolean,
+      default: false,
+    },
+    documentType: {
+      type: String,
+      enum: ["copyright", "research"],
+      default: "copyright",
+    },
+    accessRequests: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    accessGranted: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );
