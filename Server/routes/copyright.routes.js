@@ -314,6 +314,44 @@ router.put("/:id/publish", requireAuth, async (req, res, next) => {
   }
 });
 
+// Allow owning student to update some details (title, abstract, documentType, isPublic)
+router.put("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const { title, abstract, documentType, isPublic } = req.body;
+
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: "Record not found" });
+
+    // Only the owning student may update their filing details
+    if (String(copyrightDoc.student) !== String(req.user._id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (title && typeof title === 'string') copyrightDoc.title = title;
+    if (abstract && typeof abstract === 'string') copyrightDoc.abstract = abstract;
+    if (documentType && ["copyright", "research"].includes(documentType)) copyrightDoc.documentType = documentType;
+
+    // Allow owner to unpublish via this endpoint as well
+    if (typeof isPublic === 'boolean') {
+      // Only allow publish/unpublish if the document is approved
+      if (isPublic && copyrightDoc.status !== 'approved') {
+        return res.status(400).json({ error: 'Only approved documents can be published' });
+      }
+      copyrightDoc.isPublic = !!isPublic;
+    }
+
+    await copyrightDoc.save();
+
+    const populated = await Copyright.findById(copyrightDoc._id)
+      .populate("student", "name email college")
+      .populate("mentor", "name email college");
+
+    return res.json({ ok: true, copyright: mapCopyright(populated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get("/:id/comments", requireAuth, async (req, res, next) => {
   try {
     const copyrightDoc = await Copyright.findById(req.params.id);

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Eye } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { Navbar } from "./navbar";
 
 type PublicItem = {
 	_id: string;
@@ -60,6 +61,8 @@ export default function PublicPage() {
 	}, []);
 
 	return (
+		<>
+		<Navbar />
 		<div className="p-6 max-w-5xl mx-auto">
 			<h1 className="text-2xl font-semibold mb-4">Public Copyrights</h1>
 
@@ -74,7 +77,7 @@ export default function PublicPage() {
 							<Label className="mb-1">College (optional)</Label>
 							<Input placeholder="College" value={college} onChange={(e) => setCollege(e.target.value)} />
 						</div>
-						<div className="col-span-2 flex items-end">
+						<div className="col-span-2 flex items-end mt-5">
 							<Button onClick={fetchItems} className="w-full">Search</Button>
 						</div>
 					</div>
@@ -91,17 +94,22 @@ export default function PublicPage() {
 					<PublicItemCard key={it._id} item={it} />
 				))}
 			</div>
-		</div>
-	);
+				</div>
+				</>
+		);
 }
 
 function PublicItemCard({ item }: { item: PublicItem }) {
 	const { user } = useAuth();
 	const [open, setOpen] = useState(false);
-	const [statusLoading, setStatusLoading] = useState(false);
+	const [statusLoading, setStatusLoading] = useState(true);
 	const [requested, setRequested] = useState(false);
 	const [granted, setGranted] = useState(false);
 	const [owner, setOwner] = useState(false);
+	const [editMode, setEditMode] = useState(false);
+	const [editTitle, setEditTitle] = useState(item.title);
+	const [editAbstract, setEditAbstract] = useState(item.abstract);
+	const [saving, setSaving] = useState(false);
 
 	async function loadStatus() {
 		if (!user) return;
@@ -120,9 +128,21 @@ function PublicItemCard({ item }: { item: PublicItem }) {
 		}
 	}
 
+	useEffect(() => {
+		// On mount, check access status if user is logged in so owner state is known
+		if (user) {
+			loadStatus();
+		} else {
+			// No user -> nothing to check
+			setStatusLoading(false);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user]);
+
 	const handleOpen = async () => {
 		setOpen(true);
-		if (user) await loadStatus();
+		// If status wasn't checked yet and user exists, ensure it's loaded
+		if (user && !statusLoading) await loadStatus();
 	};
 
 	const handleRequestAccess = async () => {
@@ -138,6 +158,56 @@ function PublicItemCard({ item }: { item: PublicItem }) {
 		} catch (err) {
 			console.error(err);
 			alert('Request failed');
+		}
+	};
+
+	const handleUnpublish = async () => {
+		if (!confirm('Remove this paper from public listing?')) return;
+		try {
+			const res = await fetch(`/api/copyrights/${item._id}/publish`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ isPublic: false }),
+			});
+			if (!res.ok) {
+				const json = await res.json();
+				alert(json.error || 'Failed to unpublish');
+				return;
+			}
+			alert('This paper has been removed from public view.');
+			window.location.reload();
+		} catch (err) {
+			console.error(err);
+			alert('Network error');
+		}
+	};
+
+	const handleSaveEdits = async () => {
+		if (!editTitle || !editAbstract) {
+			alert('Title and abstract are required');
+			return;
+		}
+		setSaving(true);
+		try {
+			const res = await fetch(`/api/copyrights/${item._id}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ title: editTitle, abstract: editAbstract }),
+			});
+			if (!res.ok) {
+				const json = await res.json();
+				alert(json.error || 'Failed to save');
+				setSaving(false);
+				return;
+			}
+			alert('Changes saved');
+			window.location.reload();
+		} catch (err) {
+			console.error(err);
+			alert('Network error');
+			setSaving(false);
 		}
 	};
 
@@ -181,10 +251,17 @@ function PublicItemCard({ item }: { item: PublicItem }) {
 				<div className="text-sm text-muted-foreground">{item.abstract}</div>
 			</CardContent>
 			<CardFooter className="flex justify-end gap-2">
-				<AlertDialog open={open} onOpenChange={(val) => { if (val) handleOpen(); else setOpen(false); }}>
-					<AlertDialogTrigger asChild>
-						<Button variant="outline"><Eye className="mr-2" /> View</Button>
-					</AlertDialogTrigger>
+				<AlertDialog open={open} onOpenChange={(val) => { if (val) handleOpen(); else { setOpen(false); setEditMode(false); } }}>
+					{owner ? (
+						<div className="flex items-center gap-2">
+							<Button variant="outline" onClick={() => { setEditMode(true); setOpen(true); }}>Edit</Button>
+							<Button variant="destructive" onClick={handleUnpublish}>Remove from Public</Button>
+						</div>
+					) : (
+						<AlertDialogTrigger asChild>
+							<Button variant="outline"><Eye className="mr-2" /> View</Button>
+						</AlertDialogTrigger>
+					)}
 					<AlertDialogContent>
 						<AlertDialogHeader>
 							<AlertDialogTitle>{item.title}</AlertDialogTitle>
@@ -201,26 +278,45 @@ function PublicItemCard({ item }: { item: PublicItem }) {
 
 						<div className="flex justify-between items-center gap-4">
 							<div>
-								{statusLoading ? <span className="text-sm">Checking access...</span> : (
-									owner ? <span className="text-sm text-muted-foreground">You are the owner</span> : (
-										granted ? <a className="text-sm text-primary underline" href={`/api/copyrights/${item._id}/file`} target="_blank" rel="noreferrer">Open PDF</a> : (
-											requested ? (
-												<div className="flex items-center gap-2">
-													<span className="text-sm">Access requested</span>
-													<Button size="sm" variant="ghost" onClick={handleCancelRequest}>Cancel</Button>
-												</div>
-											) : (
-												user ? <Button onClick={handleRequestAccess} size="sm">Request Access</Button> : <a className="text-sm text-primary underline" href="/login">Sign in to request</a>
-											)
-										)
-									)
+								{statusLoading ? (
+									<span className="text-sm">Checking access...</span>
+								) : owner ? (
+									<span className="text-sm text-muted-foreground">You are the owner</span>
+								) : granted ? (
+									<a className="text-sm text-primary underline" href={`/api/copyrights/${item._id}/file`} target="_blank" rel="noreferrer">Open PDF</a>
+								) : requested ? (
+									<div className="flex items-center gap-2">
+										<span className="text-sm">Access requested</span>
+										<Button size="sm" variant="ghost" onClick={handleCancelRequest}>Cancel</Button>
+									</div>
+								) : user ? (
+									<Button onClick={handleRequestAccess} size="sm">Request Access</Button>
+								) : (
+									<a className="text-sm text-primary underline" href="/login">Sign in to request</a>
 								)}
-							</div>
-
-							<AlertDialogFooter>
-								<AlertDialogCancel>Close</AlertDialogCancel>
-							</AlertDialogFooter>
 						</div>
+
+						<AlertDialogFooter>
+							<AlertDialogCancel>Close</AlertDialogCancel>
+						</AlertDialogFooter>
+						</div>
+
+						{editMode && (
+							<div className="mt-4 space-y-3">
+								<div className="space-y-1">
+									<Label>Title</Label>
+									<Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+								</div>
+								<div className="space-y-1">
+									<Label>Abstract</Label>
+									<Input value={editAbstract} onChange={(e) => setEditAbstract(e.target.value)} />
+								</div>
+								<div className="flex items-center gap-2">
+									<Button size="sm" onClick={handleSaveEdits} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+									<Button size="sm" variant="ghost" onClick={() => setEditMode(false)}>Cancel</Button>
+								</div>
+							</div>
+						)}
 					</AlertDialogContent>
 				</AlertDialog>
 			</CardFooter>
