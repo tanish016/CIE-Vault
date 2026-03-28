@@ -67,6 +67,23 @@ const copyrightSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // Optional report file stored securely on the server (not exposed to mentors/users)
+    reportFileName: {
+      type: String,
+      default: "",
+    },
+    reportStorageFileName: {
+      type: String,
+      default: "",
+    },
+    reportFileIv: {
+      type: String,
+      default: "",
+    },
+    reportFileAuthTag: {
+      type: String,
+      default: "",
+    },
     isEncrypted: {
       type: Boolean,
       default: false,

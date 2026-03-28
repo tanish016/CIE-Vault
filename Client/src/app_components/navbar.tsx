@@ -22,7 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Shield, LogOut, LayoutDashboard, ChevronDown, User, PlusCircle, Bell, Eye } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -293,9 +293,13 @@ export function Navbar() {
                       className="group flex items-center gap-2 rounded-full pl-1 pr-2 transition-colors hover:bg-muted"
                     >
                       <Avatar className="h-8 w-8 border border-border transition-transform group-hover:scale-105">
-                        <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
-                          {initials}
-                        </AvatarFallback>
+                        {user?.avatarUrl ? (
+                          <AvatarImage src={user.avatarUrl} alt={user.name} />
+                        ) : (
+                          <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
+                            {initials}
+                          </AvatarFallback>
+                        )}
                       </Avatar>
                       <span className="hidden max-w-[120px] truncate text-sm font-semibold text-foreground sm:inline-block">
                         {user.name}

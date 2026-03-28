@@ -94,7 +94,16 @@ router.get("/", requireAuth, async (req, res, next) => {
   }
 });
 
-router.post("/", requireAuth, requireRole("student"), upload.single("file"), async (req, res, next) => {
+// Accept two files: 'file' (main PDF) and optional 'report' (project report PDF)
+router.post(
+  "/",
+  requireAuth,
+  requireRole("student"),
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "report", maxCount: 1 },
+  ]),
+  async (req, res, next) => {
   try {
     const { title, abstract, college, mentorId, portalLogin, portalPassword } = req.body;
 
@@ -102,8 +111,16 @@ router.post("/", requireAuth, requireRole("student"), upload.single("file"), asy
       return res.status(400).json({ error: "Title, abstract, and college are required" });
     }
 
-    if (!req.file) {
+    const mainFile = req.files && req.files.file && req.files.file[0];
+    const reportFile = req.files && req.files.report && req.files.report[0];
+
+    if (!mainFile) {
       return res.status(400).json({ error: "PDF receipt is required" });
+    }
+
+    // Require report file as well
+    if (!reportFile) {
+      return res.status(400).json({ error: "Project report PDF is required" });
     }
 
     const assignedMentorId = mentorId || req.user.mentor;
@@ -118,10 +135,26 @@ router.post("/", requireAuth, requireRole("student"), upload.single("file"), asy
 
     await fs.mkdir(PRIVATE_UPLOADS_DIR, { recursive: true });
 
-    const { encrypted, ivHex, authTagHex } = encryptBuffer(req.file.buffer);
+    // Encrypt and store main file
+    const { encrypted, ivHex, authTagHex } = encryptBuffer(mainFile.buffer);
     const storageFileName = `${Date.now()}-${crypto.randomUUID()}.bin`;
     const encryptedFilePath = path.join(PRIVATE_UPLOADS_DIR, storageFileName);
     await fs.writeFile(encryptedFilePath, encrypted);
+
+    // If a report file was uploaded, encrypt and store it as well
+    let reportStorageFileName = "";
+    let reportIv = "";
+    let reportAuthTag = "";
+    if (reportFile) {
+      const r = encryptBuffer(reportFile.buffer);
+      reportStorageFileName = `${Date.now()}-${crypto.randomUUID()}-report.bin`;
+      const reportPath = path.join(PRIVATE_UPLOADS_DIR, reportStorageFileName);
+      await fs.writeFile(reportPath, r.encrypted);
+      reportIv = r.ivHex;
+      reportAuthTag = r.authTagHex;
+    }
+
+    const documentType = (req.body.documentType && ["copyright", "research"].includes(req.body.documentType)) ? req.body.documentType : "copyright";
 
     const copyrightDoc = await Copyright.create({
       student: req.user._id,
@@ -134,10 +167,15 @@ router.post("/", requireAuth, requireRole("student"), upload.single("file"), asy
       portalLogin: portalLogin || "",
       portalPassword: portalPassword || "",
       fileUrl: "",
-      fileName: req.file.originalname,
+      fileName: mainFile.originalname,
       storageFileName,
       fileIv: ivHex,
       fileAuthTag: authTagHex,
+      reportFileName: reportFile ? reportFile.originalname : "",
+      reportStorageFileName: reportStorageFileName,
+      reportFileIv: reportIv,
+  reportFileAuthTag: reportAuthTag,
+  documentType,
       isEncrypted: true,
       extractedTitle: title,
       extractedFilingNumber: "",

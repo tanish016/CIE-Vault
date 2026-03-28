@@ -88,7 +88,7 @@ export function CopyrightList() {
           </div>
           <h3 className="text-lg font-semibold text-foreground">No filings yet</h3>
           <p className="max-w-xs text-sm text-muted-foreground mt-1">
-            Upload your first copyright filing using the form above to track your progress.
+            Upload your first filing using the form above to track your progress.
           </p>
         </CardContent>
       </Card>
@@ -104,7 +104,7 @@ export function CopyrightList() {
               <div className="p-2 rounded-lg bg-primary/10">
                 <FileText className="h-5 w-5 text-primary" />
               </div>
-              Your Copyright Filings
+              Your total filings
             </CardTitle>
             <Badge variant="secondary" className="font-mono px-2.5 py-0.5">
               {copyrights.length}

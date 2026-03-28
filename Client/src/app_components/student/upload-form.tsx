@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,7 @@ import {
   FileUp,
   X,
 } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const COLLEGES = [
   "Chitkara University, Punjab",
@@ -74,7 +75,9 @@ interface UploadFormProps {
 
 export function UploadForm({ onSuccess }: UploadFormProps) {
   const { user } = useAuth()
+  const [activeTab, setActiveTab] = useState<string>("copyright")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const reportInputRef = useRef<HTMLInputElement>(null)
   
   // Form State
   const [formData, setFormData] = useState({
@@ -86,6 +89,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     portalPassword: "",
   })
   const [file, setFile] = useState<File | null>(null)
+  const [reportFile, setReportFile] = useState<File | null>(null)
   
   // UI State
   const [mentors, setMentors] = useState<Mentor[]>([])
@@ -123,10 +127,25 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     }
   }
 
+  const handleReportChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0]
+    if (selected && selected.type === "application/pdf") {
+      setReportFile(selected)
+      if (status.type === 'error') setStatus({ type: 'idle' })
+    } else if (selected) {
+      setStatus({ type: 'error', message: "Please upload a valid PDF report." })
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file) {
       setStatus({ type: 'error', message: "Please attach a PDF receipt." })
+      return
+    }
+
+    if (!reportFile) {
+      setStatus({ type: 'error', message: "Please attach the project report PDF." })
       return
     }
 
@@ -135,6 +154,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     const payload = new FormData()
     Object.entries(formData).forEach(([key, value]) => payload.append(key, value))
     payload.append("file", file)
+  if (reportFile) payload.append("report", reportFile)
+  // indicate document type from selected tab
+  payload.append("documentType", activeTab === "research" ? "research" : "copyright")
 
     try {
       const res = await fetch("/api/copyrights", {
@@ -158,7 +180,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const resetForm = () => {
     setFormData(prev => ({ ...prev, title: "", abstract: "", mentorId: "", portalLogin: "", portalPassword: "" }))
     setFile(null)
+    setReportFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
+    if (reportInputRef.current) reportInputRef.current.value = ""
   }
 
   return (
@@ -169,7 +193,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
             <div className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-foreground">
                 <Upload className="h-5 w-5 text-primary" />
-                Submit Copyright Filing
+                {activeTab === 'research' ? 'Submit Research Paper' : 'Submit Copyright Filing'}
               </CardTitle>
               <CardDescription>
                 System will auto-extract details from your PDF receipt
@@ -183,7 +207,12 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
         </CardHeader>
 
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <Tabs defaultValue={activeTab} onValueChange={(v) => { setActiveTab(v) }}>
+            <TabsList>
+              <TabsTrigger value="copyright">Copyright</TabsTrigger>
+              <TabsTrigger value="research">Research Paper</TabsTrigger>
+            </TabsList>
+            <form onSubmit={handleSubmit} className="space-y-6">
             {status.type === 'error' && (
               <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-1">
                 <AlertCircle className="h-4 w-4" />
@@ -201,10 +230,10 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
             {/* General Information */}
             <div className="grid gap-4">
               <div className="space-y-2">
-                <Label htmlFor="title">Project Title</Label>
+                <Label htmlFor="title">{activeTab === 'research' ? 'Research Topic' : 'Project Title'}</Label>
                 <Input
                   id="title"
-                  placeholder="e.g., Blockchain-based supply chain system"
+                  placeholder={activeTab === 'research' ? 'e.g., Efficient distributed ML for IoT' : 'e.g., Blockchain-based supply chain system'}
                   value={formData.title}
                   onChange={(e) => handleInputChange("title", e.target.value)}
                   required
@@ -266,51 +295,53 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
 
             <Separator />
 
-            {/* Credentials Section */}
-            <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="h-4 w-4 text-primary/70" />
-                  <span className="text-sm font-semibold">Government Portal Sync (Optional)</span>
+            {/* Credentials Section (only for Copyright tab) */}
+            {activeTab === 'copyright' && (
+              <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-primary/70" />
+                    <span className="text-sm font-semibold">Government Portal Sync (Optional)</span>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p className="max-w-[200px] text-xs leading-relaxed">Only used by mentors to verify filing status on the official portal.</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    <p className="max-w-[200px] text-xs leading-relaxed">Only used by mentors to verify filing status on the official portal.</p>
-                  </TooltipContent>
-                </Tooltip>
+                
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="portalLogin" className="text-[11px] uppercase tracking-wider text-muted-foreground">Portal ID</Label>
+                    <Input
+                      id="portalLogin"
+                      placeholder="Username"
+                      value={formData.portalLogin}
+                      onChange={(e) => handleInputChange("portalLogin", e.target.value)}
+                      className="h-9 bg-background"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="portalPassword" className="text-[11px] uppercase tracking-wider text-muted-foreground">Portal Key</Label>
+                    <Input
+                      id="portalPassword"
+                      type="password"
+                      placeholder="••••••••"
+                      value={formData.portalPassword}
+                      onChange={(e) => handleInputChange("portalPassword", e.target.value)}
+                      className="h-9 bg-background"
+                    />
+                  </div>
+                </div>
               </div>
-              
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="portalLogin" className="text-[11px] uppercase tracking-wider text-muted-foreground">Portal ID</Label>
-                  <Input
-                    id="portalLogin"
-                    placeholder="Username"
-                    value={formData.portalLogin}
-                    onChange={(e) => handleInputChange("portalLogin", e.target.value)}
-                    className="h-9 bg-background"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="portalPassword" className="text-[11px] uppercase tracking-wider text-muted-foreground">Portal Key</Label>
-                  <Input
-                    id="portalPassword"
-                    type="password"
-                    placeholder="••••••••"
-                    value={formData.portalPassword}
-                    onChange={(e) => handleInputChange("portalPassword", e.target.value)}
-                    className="h-9 bg-background"
-                  />
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Modern File Drop Zone */}
             <div className="space-y-3">
-              <Label>Copyright Receipt (Official PDF)</Label>
+              <Label>{activeTab === 'research' ? 'Research Paper Govt. receipts/acknowledgments' : 'Copyright Receipt (Official PDF)'}</Label>
               {!file ? (
                 <div 
                   onClick={() => fileInputRef.current?.click()}
@@ -320,7 +351,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
                     <FileUp className="h-6 w-6 text-primary" />
                   </div>
                   <p className="mt-3 text-sm font-medium">Click to upload or drag and drop</p>
-                  <p className="text-xs text-muted-foreground mt-1">Receipt will be processed for AI verification</p>
+                  <p className="text-xs text-muted-foreground mt-1">{activeTab === 'research' ? 'Upload government receipts or acknowledgments related to the research' : 'Receipt will be processed for AI verification'}</p>
                   <input
                     type="file"
                     className="hidden"
@@ -353,10 +384,55 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               )}
             </div>
 
+            {/* Optional Project Report Upload */}
+            <Separator />
+            <div className="space-y-3">
+              <Label>{activeTab === 'research' ? 'Research Paper (Required PDF)' : 'Project Report (Required PDF)'}</Label>
+              {!reportFile ? (
+                <div 
+                  onClick={() => reportInputRef.current?.click()}
+                  className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/5 py-6 transition-all hover:border-primary/50 hover:bg-primary/5 cursor-pointer"
+                >
+                  <div className="rounded-full bg-background p-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <FileUp className="h-5 w-5 text-primary" />
+                  </div>
+                  <p className="mt-2 text-sm">Click to upload {activeTab === 'research' ? 'research paper' : 'report'} (required)</p>
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={reportInputRef}
+                    accept=".pdf"
+                    onChange={handleReportChange}
+                  />
+                </div>
+                ) : (
+                <div className="flex items-center justify-between rounded-lg border bg-primary/5 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded bg-primary/10 p-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold truncate max-w-[200px]">{reportFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{(reportFile.size / 1024 / 1024).toFixed(2)} MB • Ready to submit</p>
+                    </div>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setReportFile(null)} 
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
             <Button 
               type="submit" 
               className="w-full h-11 text-base font-semibold transition-all active:scale-[0.98]" 
-              disabled={status.type === 'loading' || !formData.mentorId}
+              disabled={status.type === 'loading' || !formData.mentorId || !reportFile}
             >
               {status.type === 'loading' ? (
                 <>
@@ -371,6 +447,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               )}
             </Button>
           </form>
+          </Tabs>
         </CardContent>
       </Card>
     </TooltipProvider>
