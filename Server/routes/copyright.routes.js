@@ -13,6 +13,10 @@ const { encryptBuffer, decryptBuffer } = require("../utils/file-encryption");
 
 const router = express.Router();
 
+// Per-field size limits
+const MAX_RECEIPT_BYTES = 500 * 1024; // 500 KB
+const MAX_REPORT_BYTES = 2 * 1024 * 1024; // 2 MB
+
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
@@ -21,8 +25,10 @@ const upload = multer({
     }
     return cb(null, true);
   },
+  // Set a reasonable global cap (max of per-field limits). We'll also enforce
+  // per-field sizes inside the route handler to provide precise error messages.
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_REPORT_BYTES,
   },
 });
 
@@ -121,6 +127,15 @@ router.post(
     // Require report file as well
     if (!reportFile) {
       return res.status(400).json({ error: "Project report PDF is required" });
+    }
+
+    // Enforce per-file size limits (multer's global limit is the max of these)
+    if (mainFile.size > MAX_RECEIPT_BYTES) {
+      return res.status(400).json({ error: "The file is greater than 500 KB" });
+    }
+
+    if (reportFile.size > MAX_REPORT_BYTES) {
+      return res.status(400).json({ error: "Project report must be 2 MB or smaller" });
     }
 
     const assignedMentorId = mentorId || req.user.mentor;

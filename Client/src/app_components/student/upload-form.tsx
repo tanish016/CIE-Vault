@@ -78,6 +78,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const [activeTab, setActiveTab] = useState<string>("copyright")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reportInputRef = useRef<HTMLInputElement>(null)
+  // Size limits
+  const MAX_RECEIPT_BYTES = 500 * 1024 // 500 KB
+  const MAX_REPORT_BYTES = 2 * 1024 * 1024 // 2 MB
   
   // Form State
   const [formData, setFormData] = useState({
@@ -120,6 +123,13 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (selectedFile && selectedFile.type === "application/pdf") {
+      if (selectedFile.size > MAX_RECEIPT_BYTES) {
+        setStatus({ type: 'error', message: "The file is greater than 500 KB" })
+        // clear any previously selected file
+        setFile(null)
+        if (fileInputRef.current) fileInputRef.current.value = ""
+        return
+      }
       setFile(selectedFile)
       if (status.type === 'error') setStatus({ type: 'idle' })
     } else if (selectedFile) {
@@ -130,6 +140,12 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const handleReportChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
     if (selected && selected.type === "application/pdf") {
+      if (selected.size > MAX_REPORT_BYTES) {
+        setStatus({ type: 'error', message: "Project report must be 2 MB or smaller." })
+        setReportFile(null)
+        if (reportInputRef.current) reportInputRef.current.value = ""
+        return
+      }
       setReportFile(selected)
       if (status.type === 'error') setStatus({ type: 'idle' })
     } else if (selected) {
@@ -140,12 +156,22 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file) {
-      setStatus({ type: 'error', message: "Please attach a PDF receipt." })
+      setStatus({ type: 'error', message: "Please attach a PDF receipt (max 500 KB)." })
       return
     }
 
     if (!reportFile) {
-      setStatus({ type: 'error', message: "Please attach the project report PDF." })
+      setStatus({ type: 'error', message: "Please attach the project report PDF (max 2 MB)." })
+      return
+    }
+
+    // Final size checks before upload
+    if (file && file.size > MAX_RECEIPT_BYTES) {
+      setStatus({ type: 'error', message: "The file is greater than 500 KB" })
+      return
+    }
+    if (reportFile && reportFile.size > MAX_REPORT_BYTES) {
+      setStatus({ type: 'error', message: "Project report must be 2 MB or smaller." })
       return
     }
 
@@ -213,13 +239,6 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               <TabsTrigger value="research">Research Paper</TabsTrigger>
             </TabsList>
             <form onSubmit={handleSubmit} className="space-y-6">
-            {status.type === 'error' && (
-              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-1">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{status.message}</AlertDescription>
-              </Alert>
-            )}
-
             {status.type === 'success' && (
               <Alert className="border-green-500/30 bg-green-500/5 text-green-600 animate-in zoom-in-95">
                 <CheckCircle className="h-4 w-4" />
@@ -340,6 +359,13 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
             )}
 
             {/* Modern File Drop Zone */}
+            {/* Show error messages directly above the receipt drop zone for better visibility */}
+            {status.type === 'error' && (
+              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-1">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{status.message}</AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-3">
               <Label>{activeTab === 'research' ? 'Research Paper Govt. receipts/acknowledgments' : 'Copyright Receipt (Official PDF)'}</Label>
               {!file ? (
