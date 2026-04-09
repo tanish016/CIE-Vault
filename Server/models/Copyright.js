@@ -92,6 +92,14 @@ const copyrightSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    extractedRegistrant: {
+      type: String,
+      default: "",
+    },
+    extractedDiaryNumber: {
+      type: String,
+      default: "",
+    },
     extractedFilingNumber: {
       type: String,
       default: "",

@@ -69,6 +69,12 @@ interface CopyrightCardProps {
     fileName: string
     extractedTitle?: string
     extractedFilingNumber?: string
+  // Optional fields provided by the API (receipt/report metadata)
+  receiptUrl?: string
+  reportUrl?: string
+  reportFileName?: string
+  extractedRegistrant?: string
+  extractedDiaryNumber?: string
     createdAt: string
     student: {
       _id?: string
@@ -90,6 +96,8 @@ interface CopyrightCardProps {
 export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExpanded = false }: CopyrightCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
+  const [showReport, setShowReport] = useState(false)
+  const [showReceipt, setShowReceipt] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<"approved" | "rejected" | null>(null)
 
   useEffect(() => {
@@ -132,6 +140,9 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
   // Mentors should not see a direct download/view button from the mentor dashboard
   // Allow mentors to view file when they have full access or when the item was requested/assigned to them (cross-college request)
   const canViewFile = !isFileHidden && (isFullAccess || isRequestedAccess || user?.role !== "mentor")
+  // Always allow inline previews when the file URLs are available.
+  // Note: access control is still enforced by the server when fetching the files.
+  // We render previews if the API provided URLs for receipt/report.
 
   return (
     <TooltipProvider>
@@ -209,7 +220,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
               <div className="flex flex-col gap-5 rounded-xl border bg-muted/30 p-5 shadow-inner">
                 
                 {/* AI Extraction Section */}
-                {(copyright.extractedTitle || copyright.extractedFilingNumber) && (
+                {(copyright.extractedTitle || copyright.extractedFilingNumber || (copyright as any).extractedRegistrant || (copyright as any).extractedDiaryNumber) && (
                   <section className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-amber-500" />
@@ -228,6 +239,18 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Filing #:</span>
                           <span className="font-mono text-primary">{copyright.extractedFilingNumber}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedDiaryNumber && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Diary #:</span>
+                          <span className="text-foreground">{(copyright as any).extractedDiaryNumber}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedRegistrant && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Registrant:</span>
+                          <span className="text-foreground">{(copyright as any).extractedRegistrant}</span>
                         </div>
                       )}
                     </div>
@@ -296,9 +319,16 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                           {copyright.fileName || "document.pdf"}
                         </span>
                       </div>
-                      <Button variant="link" size="sm" asChild>
-                         <a href={copyright.fileUrl} target="_blank" rel="noopener noreferrer">View File</a>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {(copyright as any).reportUrl && (
+                          <Button variant="outline" size="sm" asChild>
+                            <a href={(copyright as any).reportUrl} target="_blank" rel="noopener noreferrer">View Report</a>
+                          </Button>
+                        )}
+                        <Button variant="link" size="sm" asChild>
+                          <a href={copyright.fileUrl} target="_blank" rel="noopener noreferrer">View File</a>
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
@@ -306,6 +336,81 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                       {accessLevel === "external" || user?.role === "mentor" ? "Protected content" : "No file attached"}
                     </div>
                   )}
+                  {/* Two clear sections: left = Report, right = Receipt (report-first UX) */}
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {/* Report Section (now first) */}
+                    <div className="rounded border bg-card p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium">Project Report</div>
+                        <div className="text-xs text-muted-foreground">{(copyright as any).reportFileName || 'report.pdf'}</div>
+                      </div>
+                      <div className="mt-3">
+                        {(copyright as any).reportUrl ? (
+                          <>
+                            <div className="rounded overflow-hidden border">
+                              {showReport ? (
+                                <iframe src={(copyright as any).reportUrl} title={`report-${copyright.fileName || ''}`} className="h-64 w-full" />
+                              ) : (
+                                <div className="h-12 w-full flex items-center px-3 text-sm text-muted-foreground">
+                                  Report preview hidden
+                                </div>
+                              )}
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <Button variant="outline" size="sm" onClick={() => setShowReport(!showReport)}>
+                                {showReport ? 'Hide Preview' : 'Preview Report'}
+                              </Button>
+                              <Button variant="link" size="sm" asChild>
+                                <a href={(copyright as any).reportUrl} target="_blank" rel="noopener noreferrer">Open Report</a>
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="p-4 rounded bg-muted/5 text-sm text-muted-foreground">
+                            <XCircle className="inline-block mr-2 align-text-bottom" />
+                            {(copyright as any).reportUrl ? 'Report protected' : 'No report uploaded'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Receipt Section (now second) */}
+                    <div className="rounded border bg-card p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium">Receipt</div>
+                        <div className="text-xs text-muted-foreground">{copyright.fileName || 'receipt.pdf'}</div>
+                      </div>
+                      <div className="mt-3">
+                        {copyright.receiptUrl ? (
+                          <>
+                                    <div className="rounded overflow-hidden border">
+                                      {showReceipt ? (
+                                        <iframe src={copyright.receiptUrl} title={`${copyright.fileName || 'receipt'}`} className="h-40 w-full" />
+                                      ) : (
+                                        <div className="h-12 w-full flex items-center px-3 text-sm text-muted-foreground">
+                                          Receipt preview hidden
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <Button variant="outline" size="sm" onClick={() => setShowReceipt(!showReceipt)}>
+                                        {showReceipt ? 'Hide Preview' : 'Preview Receipt'}
+                                      </Button>
+                                      <Button variant="link" size="sm" asChild>
+                                        <a href={copyright.receiptUrl} target="_blank" rel="noopener noreferrer">Open Receipt</a>
+                                      </Button>
+                                      <Button variant="ghost" size="sm" onClick={() => window.open(copyright.receiptUrl, '_blank')}>Download</Button>
+                                    </div>
+                          </>
+                        ) : (
+                          <div className="p-4 rounded bg-muted/5 text-sm text-muted-foreground">
+                            <XCircle className="inline-block mr-2 align-text-bottom" />
+                            {canViewFile ? 'Receipt not attached' : 'Protected or unavailable' }
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </section>
 
                 {/* Status Actions (Mentor Only) */}

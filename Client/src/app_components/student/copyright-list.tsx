@@ -279,9 +279,16 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
             <div>Date: <span className="text-foreground">{new Date(copyright.createdAt).toLocaleDateString()}</span></div>
           </div>
 
+          {/* Show Project Report first (if present), then the Receipt PDF link */}
+          {(copyright as any).reportUrl ? (
+            <div>
+              <a href={(copyright as any).reportUrl} target="_blank" rel="noreferrer" className="text-sm text-primary underline">Open Project Report</a>
+            </div>
+          ) : null}
+
           {((copyright as any).fileUrl) && (
             <div>
-              <a href={(copyright as any).fileUrl} target="_blank" rel="noreferrer" className="text-sm text-primary underline">Open uploaded PDF</a>
+              <a href={(copyright as any).fileUrl} target="_blank" rel="noreferrer" className="text-sm text-primary underline">Open Receipt PDF</a>
             </div>
           )}
 
@@ -344,6 +351,31 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
         )}
 
         <AlertDialogFooter>
+          {/* Delete button for the owning student when the filing is not approved */}
+          {user && String(user._id) === String((copyright as any).student) && copyright.status !== 'approved' && (
+            <button
+              className="px-3 py-1 rounded border border-red-400 text-red-600 hover:bg-red-50"
+              onClick={async () => {
+                const ok = window.confirm('Are you sure you want to delete this filing? This action cannot be undone.')
+                if (!ok) return
+                try {
+                  const res = await fetch(`/api/copyrights/${copyright._id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                  })
+                  if (!res.ok) throw new Error('Delete failed')
+                  // Refresh list and close dialog
+                  mutate('/api/copyrights')
+                  setOpen(false)
+                } catch (err) {
+                  console.error(err)
+                  alert('Failed to delete filing. Please try again.')
+                }
+              }}
+            >
+              Delete
+            </button>
+          )}
           <AlertDialogCancel>Close</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>

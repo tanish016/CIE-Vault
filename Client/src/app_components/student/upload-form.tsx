@@ -155,23 +155,24 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!file) {
-      setStatus({ type: 'error', message: "Please attach a PDF receipt (max 500 KB)." })
-      return
-    }
-
+    // Ensure report is attached first (report-first UX), but require both
     if (!reportFile) {
       setStatus({ type: 'error', message: "Please attach the project report PDF (max 2 MB)." })
       return
     }
 
-    // Final size checks before upload
-    if (file && file.size > MAX_RECEIPT_BYTES) {
-      setStatus({ type: 'error', message: "The file is greater than 500 KB" })
+    if (!file) {
+      setStatus({ type: 'error', message: "Please attach a PDF receipt (max 500 KB)." })
       return
     }
+
+    // Final size checks before upload (report first)
     if (reportFile && reportFile.size > MAX_REPORT_BYTES) {
       setStatus({ type: 'error', message: "Project report must be 2 MB or smaller." })
+      return
+    }
+    if (file && file.size > MAX_RECEIPT_BYTES) {
+      setStatus({ type: 'error', message: "The file is greater than 500 KB" })
       return
     }
 
@@ -358,14 +359,63 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               </div>
             )}
 
-            {/* Modern File Drop Zone */}
-            {/* Show error messages directly above the receipt drop zone for better visibility */}
+
+            {/* Modern File Drop Zone - report first per UX change */}
+            {/* Show error messages directly above the report drop zone for better visibility */}
             {status.type === 'error' && (
               <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-1">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{status.message}</AlertDescription>
               </Alert>
             )}
+
+            {/* Project Report Upload (now displayed first) */}
+            <div className="space-y-3">
+              <Label>{activeTab === 'research' ? 'Research Paper (Required PDF)' : 'Project Report (Required PDF)'}</Label>
+              {!reportFile ? (
+                <div 
+                  onClick={() => reportInputRef.current?.click()}
+                  className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/5 py-6 transition-all hover:border-primary/50 hover:bg-primary/5 cursor-pointer"
+                >
+                  <div className="rounded-full bg-background p-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <FileUp className="h-5 w-5 text-primary" />
+                  </div>
+                  <p className="mt-2 text-sm">Click to upload {activeTab === 'research' ? 'research paper' : 'report'} (required)</p>
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={reportInputRef}
+                    accept=".pdf"
+                    onChange={handleReportChange}
+                  />
+                </div>
+                ) : (
+                <div className="flex items-center justify-between rounded-lg border bg-primary/5 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded bg-primary/10 p-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold truncate max-w-[200px]">{reportFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{(reportFile.size / 1024 / 1024).toFixed(2)} MB • Ready to submit</p>
+                    </div>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setReportFile(null)} 
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Receipt Upload (moved below report) */}
             <div className="space-y-3">
               <Label>{activeTab === 'research' ? 'Research Paper Govt. receipts/acknowledgments' : 'Copyright Receipt (Official PDF)'}</Label>
               {!file ? (
@@ -410,55 +460,10 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               )}
             </div>
 
-            {/* Optional Project Report Upload */}
-            <Separator />
-            <div className="space-y-3">
-              <Label>{activeTab === 'research' ? 'Research Paper (Required PDF)' : 'Project Report (Required PDF)'}</Label>
-              {!reportFile ? (
-                <div 
-                  onClick={() => reportInputRef.current?.click()}
-                  className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/5 py-6 transition-all hover:border-primary/50 hover:bg-primary/5 cursor-pointer"
-                >
-                  <div className="rounded-full bg-background p-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <FileUp className="h-5 w-5 text-primary" />
-                  </div>
-                  <p className="mt-2 text-sm">Click to upload {activeTab === 'research' ? 'research paper' : 'report'} (required)</p>
-                  <input
-                    type="file"
-                    className="hidden"
-                    ref={reportInputRef}
-                    accept=".pdf"
-                    onChange={handleReportChange}
-                  />
-                </div>
-                ) : (
-                <div className="flex items-center justify-between rounded-lg border bg-primary/5 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded bg-primary/10 p-2">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold truncate max-w-[200px]">{reportFile.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{(reportFile.size / 1024 / 1024).toFixed(2)} MB • Ready to submit</p>
-                    </div>
-                  </div>
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => setReportFile(null)} 
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-
             <Button 
               type="submit" 
               className="w-full h-11 text-base font-semibold transition-all active:scale-[0.98]" 
-              disabled={status.type === 'loading' || !formData.mentorId || !reportFile}
+              disabled={status.type === 'loading' || !formData.mentorId || !reportFile || !file}
             >
               {status.type === 'loading' ? (
                 <>

@@ -7,6 +7,7 @@ import { StudentDashboard } from "./app_components/student/student-dashboard";
 import { MentorDashboard } from "./app_components/mentor/mentor-dashboard";
 import Profile from "./app_components/profile";
 import PublicPage from "./app_components/public";
+import PlagiarismCheck from "./app_components/plagiarism-check";
 import { useAuth } from "./context/auth-context";
 
 function GuestOnlyRoute({ children }: { children: ReactElement }) {
@@ -66,6 +67,14 @@ function App() {
         }
       />
       <Route path="/public" element={<PublicPage />} />
+      <Route
+        path="/plagiarism-check"
+        element={
+          <ProtectedRoute>
+            <PlagiarismCheck />
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   )
 }

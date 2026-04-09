@@ -11,6 +11,7 @@ const mentorRoutes = require("./routes/mentor.routes");
 const notificationRoutes = require("./routes/notification.routes");
 const profileRoutes = require("./routes/profile.routes");
 const publicRoutes = require("./routes/public.routes");
+const plagiarismRoutes = require("./routes/plagiarism.routes");
 const errorHandler = require("./middlewares/error-handler");
 
 const app = express();
@@ -41,6 +42,7 @@ app.use("/api/mentor", mentorRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/public", publicRoutes);
+app.use("/api/plagiarism", plagiarismRoutes);
 
 app.use(errorHandler);
 

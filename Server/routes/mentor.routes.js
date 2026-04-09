@@ -17,8 +17,13 @@ function mapMentorOwned(item) {
     status: item.status,
     portalLogin: item.portalLogin,
     portalPassword: item.portalPassword,
-    fileUrl: item.fileName ? `/api/copyrights/${item._id}/file` : "",
+    // Use storageFileName presence to determine if file is available (covers encrypted storage)
+    fileUrl: item.storageFileName ? `/api/copyrights/${item._id}/file` : "",
+    receiptUrl: item.storageFileName ? `/api/copyrights/${item._id}/file` : "",
     fileName: item.fileName,
+    // Expose report metadata when present on the model (either original name or storage path)
+    reportFileName: item.reportFileName || "",
+    reportUrl: (item.reportFileName || item.reportStorageFileName) ? `/api/copyrights/${item._id}/report` : "",
     extractedTitle: item.extractedTitle,
     extractedFilingNumber: item.extractedFilingNumber,
     createdAt: item.createdAt,
@@ -75,7 +80,8 @@ router.get("/global", async (req, res, next) => {
       })
       .map((item) => {
         // For requested items (either assigned cross-college or explicitly requested), allow file access but hide credentials
-        const showFileAccess = item.fileName ? true : false;
+  // Determine file access based on storage presence as well as original filename
+  const showFileAccess = item.fileName || item.storageFileName ? true : false;
 
         return {
           _id: item._id,
@@ -87,7 +93,10 @@ router.get("/global", async (req, res, next) => {
           portalLogin: "",
           portalPassword: "",
           fileUrl: showFileAccess ? `/api/copyrights/${item._id}/file` : "[Hidden: restricted]",
+          receiptUrl: showFileAccess ? `/api/copyrights/${item._id}/file` : "[Hidden: restricted]",
           fileName: showFileAccess ? item.fileName : "Hidden",
+          reportFileName: item.reportFileName || "",
+          reportUrl: (item.reportFileName || item.reportStorageFileName) ? `/api/copyrights/${item._id}/report` : "",
           extractedTitle: item.extractedTitle,
           extractedFilingNumber: item.extractedFilingNumber,
           createdAt: item.createdAt,

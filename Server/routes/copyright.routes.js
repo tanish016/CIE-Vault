@@ -3,13 +3,14 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs/promises");
 const crypto = require("crypto");
+const { execFile } = require('child_process');
 
 const Copyright = require("../models/Copyright");
 const Comment = require("../models/Comment");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const { requireAuth, requireRole } = require("../middlewares/auth");
-const { encryptBuffer, decryptBuffer } = require("../utils/file-encryption");
+const { encryptBuffer, decryptBuffer, encryptBufferForReport, decryptBufferForReport } = require("../utils/file-encryption");
 
 const router = express.Router();
 
@@ -33,6 +34,8 @@ const upload = multer({
 });
 
 const PRIVATE_UPLOADS_DIR = path.join(__dirname, "..", "uploads", "private");
+const RECEIPTS_DIR = path.join(PRIVATE_UPLOADS_DIR, "receipts");
+const REPORTS_DIR = path.join(PRIVATE_UPLOADS_DIR, "reports");
 
 function isAuthorizedForFileAccess(copyrightDoc, user) {
   const isOwnerStudent = user.role === "student" && String(copyrightDoc.student) === String(user._id);
@@ -67,10 +70,21 @@ function mapCopyright(doc) {
     status: doc.status,
     portalLogin: doc.portalLogin,
     portalPassword: doc.portalPassword,
-    fileUrl: doc.fileName ? `/api/copyrights/${doc._id}/file` : "",
+    // Keep fileUrl for backward compatibility but also expose explicit receiptUrl
+    // Use storageFileName (encrypted storage) as the canonical presence check
+    fileUrl: doc.storageFileName ? `/api/copyrights/${doc._id}/file` : "",
+    receiptUrl: doc.storageFileName ? `/api/copyrights/${doc._id}/file` : "",
     fileName: doc.fileName,
+    // Expose report metadata so client can clearly differentiate
+    reportFileName: doc.reportFileName || "",
     extractedTitle: doc.extractedTitle,
     extractedFilingNumber: doc.extractedFilingNumber,
+    extractedRegistrant: doc.extractedRegistrant,
+    extractedDiaryNumber: doc.extractedDiaryNumber,
+    // Expose reportUrl when either an original report filename or a report storage
+    // file exists. Some older records may have storage paths but no original
+    // filename; this ensures the client can still fetch the report blob.
+    reportUrl: (doc.reportFileName || doc.reportStorageFileName) ? `/api/copyrights/${doc._id}/report` : "",
     createdAt: doc.createdAt,
     student: doc.student,
     mentor: doc.mentor,
@@ -117,7 +131,7 @@ router.post(
       return res.status(400).json({ error: "Title, abstract, and college are required" });
     }
 
-    const mainFile = req.files && req.files.file && req.files.file[0];
+  const mainFile = req.files && req.files.file && req.files.file[0];
     const reportFile = req.files && req.files.report && req.files.report[0];
 
     if (!mainFile) {
@@ -148,22 +162,74 @@ router.post(
       }
     }
 
-    await fs.mkdir(PRIVATE_UPLOADS_DIR, { recursive: true });
+  await fs.mkdir(PRIVATE_UPLOADS_DIR, { recursive: true });
+  await fs.mkdir(RECEIPTS_DIR, { recursive: true });
+  await fs.mkdir(REPORTS_DIR, { recursive: true });
 
-    // Encrypt and store main file
-    const { encrypted, ivHex, authTagHex } = encryptBuffer(mainFile.buffer);
-    const storageFileName = `${Date.now()}-${crypto.randomUUID()}.bin`;
-    const encryptedFilePath = path.join(PRIVATE_UPLOADS_DIR, storageFileName);
-    await fs.writeFile(encryptedFilePath, encrypted);
+    // Attempt to extract basic fields from the receipt PDF using pdf-parse
+    let extractedTitle = "";
+    let extractedFilingNumber = "";
+    let extractedRegistrant = "";
+    let extractedDiaryNumber = "";
+    try {
+      const pdfParse = require('pdf-parse');
+  const parsed = await pdfParse(mainFile.buffer);
+  let finalText = (parsed && parsed.text) ? parsed.text : '';
+      // If pdf-parse returned very little text (likely a scanned image PDF),
+      // attempt a system `pdftotext` fallback if available. This requires
+      // the `pdftotext` binary (poppler) to be installed on the server.
+      if ((finalText || '').trim().length < 50) {
+        try {
+          const tmpPdf = path.join(PRIVATE_UPLOADS_DIR, `${Date.now()}-${crypto.randomUUID()}.pdf`);
+          await fs.writeFile(tmpPdf, mainFile.buffer);
+          // Call pdftotext to stdout
+          const out = await new Promise((resolve, reject) => {
+            execFile('pdftotext', ['-layout', tmpPdf, '-'], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+              // remove temp file regardless
+              fs.unlink(tmpPdf).catch(() => {})
+              if (err) return reject(err)
+              resolve(stdout || '')
+            })
+          })
+          if (out && String(out).trim().length > finalText.trim().length) finalText = String(out)
+        } catch (pfErr) {
+          // pdftotext not available or failed; keep finalText as-is
+          console.warn('pdftotext fallback failed:', pfErr && pfErr.message ? pfErr.message : pfErr)
+        }
+      }
+  const text = finalText;
+      // Try some common patterns
+      const diaryMatch = text.match(/Diary\s*(?:No\.?|Number)?[:\s-]*([A-Z0-9\-\/\\]+(?:\s*[A-Z0-9\-\/\\])?)/i);
+      if (diaryMatch) extractedDiaryNumber = diaryMatch[1].trim();
+
+      const filingMatch = text.match(/Filing\s*(?:No\.?|Number)?[:\s-]*([A-Z0-9\-\/\\]+)/i) || text.match(/Registration\s*No\.?[:\s-]*([A-Z0-9\-\/\\]+)/i);
+      if (filingMatch) extractedFilingNumber = filingMatch[1].trim();
+
+      const regMatch = text.match(/Copyright\s*(?:Reg(?:istration)?\.?\s*of)?[:\s-]*([^\r\n]+)/i);
+      if (regMatch) extractedRegistrant = regMatch[1].trim();
+
+      const titleMatch = text.match(/Title[:\s-]*([^\r\n]+)/i) || text.match(/Titled[:\s-]*([^\r\n]+)/i);
+      if (titleMatch) extractedTitle = titleMatch[1].trim();
+    } catch (e) {
+      // non-fatal
+      console.warn('PDF text extraction failed:', e && e.message ? e.message : e);
+    }
+
+  // Encrypt and store receipt (main file) into receipts directory
+  const { encrypted, ivHex, authTagHex } = encryptBuffer(mainFile.buffer);
+  const storageFileName = `${Date.now()}-${crypto.randomUUID()}.bin`;
+  const encryptedFilePath = path.join(RECEIPTS_DIR, storageFileName);
+  await fs.writeFile(encryptedFilePath, encrypted);
 
     // If a report file was uploaded, encrypt and store it as well
     let reportStorageFileName = "";
     let reportIv = "";
     let reportAuthTag = "";
     if (reportFile) {
-      const r = encryptBuffer(reportFile.buffer);
+      // Use a separate encryption key for reports (if configured)
+      const r = encryptBufferForReport(reportFile.buffer);
       reportStorageFileName = `${Date.now()}-${crypto.randomUUID()}-report.bin`;
-      const reportPath = path.join(PRIVATE_UPLOADS_DIR, reportStorageFileName);
+      const reportPath = path.join(REPORTS_DIR, reportStorageFileName);
       await fs.writeFile(reportPath, r.encrypted);
       reportIv = r.ivHex;
       reportAuthTag = r.authTagHex;
@@ -191,9 +257,11 @@ router.post(
       reportFileIv: reportIv,
   reportFileAuthTag: reportAuthTag,
   documentType,
+      extractedTitle: extractedTitle || title,
+      extractedFilingNumber: extractedFilingNumber || "",
+      extractedRegistrant: extractedRegistrant || "",
+      extractedDiaryNumber: extractedDiaryNumber || "",
       isEncrypted: true,
-      extractedTitle: title,
-      extractedFilingNumber: "",
     });
 
     const populated = await Copyright.findById(copyrightDoc._id)
@@ -243,7 +311,7 @@ router.get("/:id/file", requireAuth, async (req, res, next) => {
     res.setHeader("Content-Disposition", `inline; filename="${safeName || "document.pdf"}"`);
 
     if (copyrightDoc.isEncrypted && copyrightDoc.storageFileName && copyrightDoc.fileIv && copyrightDoc.fileAuthTag) {
-      const encryptedPath = path.join(PRIVATE_UPLOADS_DIR, path.basename(copyrightDoc.storageFileName));
+      const encryptedPath = path.join(RECEIPTS_DIR, path.basename(copyrightDoc.storageFileName));
       const encryptedBuffer = await fs.readFile(encryptedPath);
       const plainBuffer = decryptBuffer(encryptedBuffer, copyrightDoc.fileIv, copyrightDoc.fileAuthTag);
       return res.send(plainBuffer);
@@ -261,6 +329,44 @@ router.get("/:id/file", requireAuth, async (req, res, next) => {
     return next(error);
   }
 });
+
+  // Serve the encrypted report PDF for a copyright if present
+  router.get('/:id/report', requireAuth, async (req, res, next) => {
+    try {
+      const copyrightDoc = await Copyright.findById(req.params.id);
+      if (!copyrightDoc) return res.status(404).json({ error: 'Record not found' });
+
+      // Only allow access to student, assigned mentor, or granted users
+      if (!isAuthorizedForFileAccess(copyrightDoc, req.user)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if (!copyrightDoc.reportStorageFileName || !copyrightDoc.reportFileIv || !copyrightDoc.reportFileAuthTag) {
+        return res.status(404).json({ error: 'Report not found' });
+      }
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${(copyrightDoc.reportFileName || 'report.pdf').replace(/[^a-zA-Z0-9._ -]/g, '')}"`);
+
+      if (copyrightDoc.isEncrypted) {
+        const encryptedPath = path.join(REPORTS_DIR, path.basename(copyrightDoc.reportStorageFileName));
+        const encryptedBuffer = await fs.readFile(encryptedPath);
+        // Decrypt using the report-specific key
+        const plainBuffer = decryptBufferForReport(encryptedBuffer, copyrightDoc.reportFileIv, copyrightDoc.reportFileAuthTag);
+        return res.send(plainBuffer);
+      }
+
+      const legacyPath = resolveLegacyFilePath(copyrightDoc.reportFileName ? `/uploads/${copyrightDoc.reportFileName}` : '');
+      if (legacyPath) {
+        const plainBuffer = await fs.readFile(legacyPath);
+        return res.send(plainBuffer);
+      }
+
+      return res.status(404).json({ error: 'Report not found' });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
 router.patch("/:id", requireAuth, requireRole("mentor"), async (req, res, next) => {
   try {
@@ -362,6 +468,85 @@ router.put("/:id/publish", requireAuth, async (req, res, next) => {
       .populate("mentor", "name email college");
 
     return res.json({ copyright: mapCopyright(populated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Allow owning student to delete their filing
+router.delete('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: 'Record not found' });
+
+    // Only the owning student may delete their filing
+    if (String(copyrightDoc.student) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Prevent accidental deletion of approved documents
+    if (copyrightDoc.status === 'approved') {
+      return res.status(400).json({ error: 'Approved documents cannot be deleted' });
+    }
+
+    // Remove encrypted receipt file if present
+    try {
+      if (copyrightDoc.storageFileName) {
+        const p = path.join(RECEIPTS_DIR, path.basename(copyrightDoc.storageFileName));
+        await fs.unlink(p).catch(() => {});
+      }
+      if (copyrightDoc.reportStorageFileName) {
+        const p2 = path.join(REPORTS_DIR, path.basename(copyrightDoc.reportStorageFileName));
+        await fs.unlink(p2).catch(() => {});
+      }
+    } catch (err) {
+      // ignore file deletion errors
+      console.warn('Failed to remove files for deleted record', err && err.message ? err.message : err);
+    }
+
+    await Copyright.deleteOne({ _id: copyrightDoc._id });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Debug endpoint: show where the encrypted files are stored and whether they exist.
+// Accessible to the owning student, assigned mentor, or granted users only.
+router.get('/:id/paths', requireAuth, async (req, res, next) => {
+  try {
+    const copyrightDoc = await Copyright.findById(req.params.id);
+    if (!copyrightDoc) return res.status(404).json({ error: 'Record not found' });
+
+    if (!isAuthorizedForFileAccess(copyrightDoc, req.user)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const receiptStorage = copyrightDoc.storageFileName ? path.join(RECEIPTS_DIR, path.basename(copyrightDoc.storageFileName)) : null;
+    const reportStorage = copyrightDoc.reportStorageFileName ? path.join(REPORTS_DIR, path.basename(copyrightDoc.reportStorageFileName)) : null;
+
+    const resp = {
+      receiptPath: receiptStorage,
+      receiptExists: false,
+      reportPath: reportStorage,
+      reportExists: false,
+    };
+
+    try {
+      if (receiptStorage) {
+        const stat = await fs.stat(receiptStorage).catch(() => null);
+        resp.receiptExists = !!stat;
+      }
+      if (reportStorage) {
+        const stat2 = await fs.stat(reportStorage).catch(() => null);
+        resp.reportExists = !!stat2;
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    return res.json(resp);
   } catch (error) {
     return next(error);
   }
