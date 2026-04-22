@@ -75,6 +75,11 @@ interface CopyrightCardProps {
   reportFileName?: string
   extractedRegistrant?: string
   extractedDiaryNumber?: string
+    extractedReceiptNumber?: string
+    extractedFilingDate?: string
+    extractedUser?: string
+    extractedForm?: string
+    extractedRequestNumber?: string
     createdAt: string
     student: {
       _id?: string
@@ -220,7 +225,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
               <div className="flex flex-col gap-5 rounded-xl border bg-muted/30 p-5 shadow-inner">
                 
                 {/* AI Extraction Section */}
-                {(copyright.extractedTitle || copyright.extractedFilingNumber || (copyright as any).extractedRegistrant || (copyright as any).extractedDiaryNumber) && (
+                {(copyright.extractedTitle || copyright.extractedFilingNumber || (copyright as any).extractedRegistrant || (copyright as any).extractedDiaryNumber || (copyright as any).extractedReceiptNumber || (copyright as any).extractedFilingDate || (copyright as any).extractedUser || (copyright as any).extractedForm || (copyright as any).extractedRequestNumber) && (
                   <section className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-amber-500" />
@@ -229,6 +234,36 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                       </h4>
                     </div>
                     <div className="grid gap-2 rounded-lg bg-card border p-3 text-sm shadow-sm">
+                      {(copyright as any).extractedReceiptNumber && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Receipt #:</span>
+                          <span className="text-foreground">{(copyright as any).extractedReceiptNumber}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedFilingDate && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Date:</span>
+                          <span className="text-foreground">{(copyright as any).extractedFilingDate}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedUser && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">User:</span>
+                          <span className="text-foreground">{(copyright as any).extractedUser}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedForm && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Form:</span>
+                          <span className="text-foreground">{(copyright as any).extractedForm}</span>
+                        </div>
+                      )}
+                      {(copyright as any).extractedRequestNumber && (
+                        <div className="grid grid-cols-[80px_1fr]">
+                          <span className="font-semibold text-muted-foreground">Request #:</span>
+                          <span className="text-foreground">{(copyright as any).extractedRequestNumber}</span>
+                        </div>
+                      )}
                       {copyright.extractedTitle && (
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Title:</span>
@@ -306,10 +341,10 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
 
                 <Separator className="opacity-50" />
 
-                {/* File Management */}
+                File Management
                 <section className="space-y-2">
-                  <h4 className="text-sm font-semibold">Legal Documentation</h4>
-                  {canViewFile ? (
+                  { <h4 className="text-sm font-semibold">Legal Documentation</h4>
+                  /*{canViewFile ? (
                     <div className="flex items-center justify-between rounded-lg border bg-card p-2 pr-4 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="rounded bg-primary/10 p-2">
@@ -335,7 +370,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                       <XCircle className="h-3.5 w-3.5" /> 
                       {accessLevel === "external" || user?.role === "mentor" ? "Protected content" : "No file attached"}
                     </div>
-                  )}
+                  )} */}
                   {/* Two clear sections: left = Report, right = Receipt (report-first UX) */}
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     {/* Report Section (now first) */}
@@ -409,6 +444,36 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                           </div>
                         )}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border bg-card p-3">
+                    <div className="text-sm font-semibold">Receipt Extracted Details</div>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full min-w-[520px] text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                            <th className="px-2 py-2 font-semibold">Receipt No.</th>
+                            <th className="px-2 py-2 font-semibold">Filing Date</th>
+                            <th className="px-2 py-2 font-semibold">User</th>
+                            <th className="px-2 py-2 font-semibold">Form</th>
+                            <th className="px-2 py-2 font-semibold">Diary No.</th>
+                            <th className="px-2 py-2 font-semibold">Request No.</th>
+                            <th className="px-2 py-2 font-semibold">Title</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="align-top">
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedReceiptNumber || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedFilingDate || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedUser || (copyright as any).extractedRegistrant || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedForm || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedDiaryNumber || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedRequestNumber || "-"}</td>
+                            <td className="px-2 py-2 text-foreground">{copyright.extractedTitle || "-"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </section>

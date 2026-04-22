@@ -41,6 +41,13 @@ interface CopyrightCardData {
   fileName: string
   extractedTitle: string
   extractedFilingNumber: string
+  extractedRegistrant?: string
+  extractedDiaryNumber?: string
+  extractedReceiptNumber?: string
+  extractedFilingDate?: string
+  extractedUser?: string
+  extractedForm?: string
+  extractedRequestNumber?: string
   createdAt: string
   student: { _id?: string; name: string; email: string; college: string }
   mentor: { name: string; email: string; college: string }

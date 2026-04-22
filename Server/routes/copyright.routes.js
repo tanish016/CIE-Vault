@@ -60,6 +60,130 @@ function resolveLegacyFilePath(fileUrl) {
   return path.join(__dirname, "..", "uploads", fileName);
 }
 
+function normalizeExtractedValue(value) {
+  if (!value) return "";
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+function resolveFieldKey(rawKey) {
+  if (!rawKey) return null;
+  const key = String(rawKey).toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  if (key === "RECEIPTNO" || key === "RECEIPTNUMBER") return "receiptNumber";
+  if (key === "FILINGDATE") return "filingDate";
+  if (key === "USER" || key === "USERNAME" || key === "APPLICANT" || key === "REGISTRANT") return "user";
+  if (key === "FORM" || key === "FORMNO" || key === "FORMNUMBER") return "form";
+  if (key === "DIARYNO" || key === "DIARYNUMBER") return "diaryNumber";
+  if (key === "REQUESTNO" || key === "REQUESTNUMBER") return "requestNumber";
+  if (key === "FILINGNO" || key === "FILINGNUMBER" || key === "REGISTRATIONNO") return "filingNumber";
+  if (key === "TITLE" || key === "TITLED") return "title";
+
+  return null;
+}
+
+function extractReceiptFields(text) {
+  const output = {
+    title: "",
+    filingNumber: "",
+    registrant: "",
+    diaryNumber: "",
+    receiptNumber: "",
+    filingDate: "",
+    user: "",
+    form: "",
+    requestNumber: "",
+  };
+
+  const assign = (field, value) => {
+    const clean = normalizeExtractedValue(value);
+    if (!field || !clean) return;
+    if (!output[field]) output[field] = clean;
+  };
+
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  // Parse table-style rows where key/value pairs are separated by wide spacing.
+  for (const line of lines) {
+    const cols = line.split(/\t+|\s{2,}/).map((x) => x.trim()).filter(Boolean);
+    if (cols.length >= 2) {
+      for (let i = 0; i < cols.length - 1; i += 2) {
+        const field = resolveFieldKey(cols[i]);
+        if (field) assign(field, cols[i + 1]);
+      }
+    }
+  }
+
+  const rx = {
+    receiptNumber: [
+      /RECEIPT\s*NO\.?\s*:\s*(\d+)/i,
+      /Receipt\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    filingDate: [
+      /FILING\s*DATE\s*:\s*([\d\/]+)/i,
+      /Filing\s*Date\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    user: [
+      /USER\s*:\s*([A-Z][A-Z\s.]*)/i,
+      /(?:User|User\s*Name|Applicant|Registrant)\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    form: [
+      /(Form-[A-ZVIX|]+)/i,
+      /Form\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    diaryNumber: [
+      /(\d+\/\d{4}-CO\/SW)/i,
+      /Diary\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    requestNumber: [/Request\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i],
+    filingNumber: [
+      /Filing\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
+      /Registration\s*No\.?\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+    registrant: [/Copyright\s*(?:Reg(?:istration)?\.?\s*of)?\s*[:\-]?\s*([^\r\n]+)/i],
+    title: [
+      /Title\s*"?\s*([^"\n,]+)/i,
+      /([A-Z]+-Vault|[A-Z]+-[A-Za-z]+)/,
+      /Title\s*[:\-]?\s*([^\r\n]+)/i,
+      /Titled\s*[:\-]?\s*([^\r\n]+)/i,
+    ],
+  };
+
+  const textValue = String(text || "");
+  Object.keys(rx).forEach((field) => {
+    if (output[field]) return;
+    for (const re of rx[field]) {
+      const m = textValue.match(re);
+      if (m && m[1]) {
+        assign(field, m[1]);
+        break;
+      }
+    }
+  });
+
+  if (!output.registrant && output.user) {
+    output.registrant = output.user;
+  }
+
+  if (!output.requestNumber) {
+    const reqByPrefix = textValue.match(/CO\/SW\s*(\d+)/i);
+    if (reqByPrefix && reqByPrefix[1]) {
+      assign("requestNumber", reqByPrefix[1]);
+    }
+  }
+
+  if (!output.requestNumber) {
+    const reqSixDigit = textValue.match(/\b(\d{6})\b/);
+    if (reqSixDigit && reqSixDigit[1]) {
+      assign("requestNumber", reqSixDigit[1]);
+    }
+  }
+
+  return output;
+}
+
 function mapCopyright(doc) {
   return {
     _id: doc._id,
@@ -81,6 +205,11 @@ function mapCopyright(doc) {
     extractedFilingNumber: doc.extractedFilingNumber,
     extractedRegistrant: doc.extractedRegistrant,
     extractedDiaryNumber: doc.extractedDiaryNumber,
+    extractedReceiptNumber: doc.extractedReceiptNumber,
+    extractedFilingDate: doc.extractedFilingDate,
+    extractedUser: doc.extractedUser,
+    extractedForm: doc.extractedForm,
+    extractedRequestNumber: doc.extractedRequestNumber,
     // Expose reportUrl when either an original report filename or a report storage
     // file exists. Some older records may have storage paths but no original
     // filename; this ensures the client can still fetch the report blob.
@@ -171,6 +300,11 @@ router.post(
     let extractedFilingNumber = "";
     let extractedRegistrant = "";
     let extractedDiaryNumber = "";
+    let extractedReceiptNumber = "";
+    let extractedFilingDate = "";
+    let extractedUser = "";
+    let extractedForm = "";
+    let extractedRequestNumber = "";
     try {
       const pdfParse = require('pdf-parse');
   const parsed = await pdfParse(mainFile.buffer);
@@ -197,19 +331,31 @@ router.post(
           console.warn('pdftotext fallback failed:', pfErr && pfErr.message ? pfErr.message : pfErr)
         }
       }
-  const text = finalText;
-      // Try some common patterns
-      const diaryMatch = text.match(/Diary\s*(?:No\.?|Number)?[:\s-]*([A-Z0-9\-\/\\]+(?:\s*[A-Z0-9\-\/\\])?)/i);
-      if (diaryMatch) extractedDiaryNumber = diaryMatch[1].trim();
+      const extracted = extractReceiptFields(finalText);
+      extractedTitle = extracted.title || "";
+      extractedFilingNumber = extracted.filingNumber || "";
+      extractedRegistrant = extracted.registrant || "";
+      extractedDiaryNumber = extracted.diaryNumber || "";
+      extractedReceiptNumber = extracted.receiptNumber || "";
+      extractedFilingDate = extracted.filingDate || "";
+      extractedUser = extracted.user || "";
+      extractedForm = extracted.form || "";
+      extractedRequestNumber = extracted.requestNumber || "";
 
-      const filingMatch = text.match(/Filing\s*(?:No\.?|Number)?[:\s-]*([A-Z0-9\-\/\\]+)/i) || text.match(/Registration\s*No\.?[:\s-]*([A-Z0-9\-\/\\]+)/i);
-      if (filingMatch) extractedFilingNumber = filingMatch[1].trim();
-
-      const regMatch = text.match(/Copyright\s*(?:Reg(?:istration)?\.?\s*of)?[:\s-]*([^\r\n]+)/i);
-      if (regMatch) extractedRegistrant = regMatch[1].trim();
-
-      const titleMatch = text.match(/Title[:\s-]*([^\r\n]+)/i) || text.match(/Titled[:\s-]*([^\r\n]+)/i);
-      if (titleMatch) extractedTitle = titleMatch[1].trim();
+      // Debug visibility: print complete extracted text and mapped fields
+      // in the server console so upload-time extraction can be verified.
+      console.log("[Receipt PDF Parsed Text]\n", finalText);
+      console.log("[Receipt Extracted Fields]", {
+        receiptNo: extractedReceiptNumber,
+        filingDate: extractedFilingDate,
+        user: extractedUser,
+        form: extractedForm,
+        diaryNo: extractedDiaryNumber,
+        requestNo: extractedRequestNumber,
+        filingNo: extractedFilingNumber,
+        title: extractedTitle,
+        registrant: extractedRegistrant,
+      });
     } catch (e) {
       // non-fatal
       console.warn('PDF text extraction failed:', e && e.message ? e.message : e);
@@ -261,6 +407,11 @@ router.post(
       extractedFilingNumber: extractedFilingNumber || "",
       extractedRegistrant: extractedRegistrant || "",
       extractedDiaryNumber: extractedDiaryNumber || "",
+      extractedReceiptNumber: extractedReceiptNumber || "",
+      extractedFilingDate: extractedFilingDate || "",
+      extractedUser: extractedUser || "",
+      extractedForm: extractedForm || "",
+      extractedRequestNumber: extractedRequestNumber || "",
       isEncrypted: true,
     });
 

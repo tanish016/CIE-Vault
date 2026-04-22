@@ -104,6 +104,26 @@ const copyrightSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    extractedReceiptNumber: {
+      type: String,
+      default: "",
+    },
+    extractedFilingDate: {
+      type: String,
+      default: "",
+    },
+    extractedUser: {
+      type: String,
+      default: "",
+    },
+    extractedForm: {
+      type: String,
+      default: "",
+    },
+    extractedRequestNumber: {
+      type: String,
+      default: "",
+    },
     isPublic: {
       type: Boolean,
       default: false,
