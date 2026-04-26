@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useRef, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import { useAuth } from "@/context/auth-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -244,13 +244,23 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
   const comments = data?.comments || []
   const { user } = useAuth()
   const { mutate } = useSWRConfig()
+  const contentScrollRef = useRef<HTMLDivElement | null>(null)
   const [isPublic, setIsPublic] = useState<boolean>((copyright as any).isPublic || false)
   const [docType, setDocType] = useState<string>((copyright as any).documentType || 'copyright')
+  const [showFullSummary, setShowFullSummary] = useState(false)
+
+  const SUMMARY_PREVIEW_LIMIT = 220
+  const summaryText = copyright.abstract || ""
+  const isSummaryLong = summaryText.length > SUMMARY_PREVIEW_LIMIT
+  const summaryPreview = isSummaryLong
+    ? `${summaryText.slice(0, SUMMARY_PREVIEW_LIMIT).trimEnd()}...`
+    : summaryText
 
   // Update local state if copyright prop changes
   React.useEffect(() => {
     setIsPublic((copyright as any).isPublic || false)
     setDocType((copyright as any).documentType || 'copyright')
+    setShowFullSummary(false)
   }, [copyright])
 
   return (
@@ -267,13 +277,26 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
         )}
       </AlertDialogTrigger>
 
-      <AlertDialogContent size="default">
+      <AlertDialogContent
+        size="default"
+        className="w-[92vw] max-w-xl max-h-[85vh] overflow-hidden p-4 sm:p-6"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>Title: {copyright.title}</AlertDialogTitle>
-          <AlertDialogDescription>Abstract: {copyright.abstract}</AlertDialogDescription>
+          <AlertDialogDescription>Document details</AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="space-y-3">
+        <div ref={contentScrollRef} className="space-y-4 overflow-y-auto pr-1 max-h-[58vh] sm:max-h-[60vh]">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="text-xs px-2.5 py-1 rounded border text-muted-foreground hover:text-foreground hover:border-primary/40"
+              onClick={() => contentScrollRef.current?.scrollBy({ top: 220, behavior: "smooth" })}
+            >
+              Scroll Down
+            </button>
+          </div>
+
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <div>Mentor: <span className="text-foreground">{copyright.mentor?.name || 'Unassigned'}</span></div>
             <div>Date: <span className="text-foreground">{new Date(copyright.createdAt).toLocaleDateString()}</span></div>
@@ -309,46 +332,62 @@ function DocumentDialog({ copyright, compact }: { copyright: CopyrightItem; comp
                 ))}
               </div>
             )}
+
+            <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+              <h3 className="text-sm font-semibold">Summary</h3>
+              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
+                {showFullSummary ? summaryText : summaryPreview}
+              </p>
+              {isSummaryLong && (
+                <button
+                  type="button"
+                  className="mt-2 text-xs font-medium text-primary underline underline-offset-4"
+                  onClick={() => setShowFullSummary((prev) => !prev)}
+                >
+                  {showFullSummary ? "Show less" : "Load more"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* If the current user is the owning student and document is approved, allow publish controls */}
-  {user && String(user._id) === String((copyright as any).student) && copyright.status === 'approved' && (
-          <div className="space-y-3 p-2">
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-                <span className="text-sm">Make this document public</span>
-              </label>
-              <div className="ml-auto flex items-center gap-2">
-                <Label className="text-sm">Type</Label>
-                <select value={docType} onChange={(e) => setDocType(e.target.value)} className="border rounded px-2 py-1 text-sm">
-                  <option value="copyright">Copyright</option>
-                  <option value="research">Research Paper</option>
-                </select>
+          {/* If the current user is the owning student and document is approved, allow publish controls */}
+          {user && String(user._id) === String((copyright as any).student) && copyright.status === 'approved' && (
+            <div className="space-y-3 p-2">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+                  <span className="text-sm">Make this document public</span>
+                </label>
+                <div className="ml-auto flex items-center gap-2">
+                  <Label className="text-sm">Type</Label>
+                  <select value={docType} onChange={(e) => setDocType(e.target.value)} className="border rounded px-2 py-1 text-sm">
+                    <option value="copyright">Copyright</option>
+                    <option value="research">Research Paper</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button className="px-3 py-1 rounded border" onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/copyrights/${copyright._id}/publish`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ isPublic, documentType: docType })
+                    })
+                    if (!res.ok) throw new Error('Failed')
+                    // revalidate list
+                    mutate('/api/copyrights')
+                    setOpen(false)
+                  } catch (err) {
+                    console.error(err)
+                    alert('Failed to update publish settings')
+                  }
+                }}>Save</button>
               </div>
             </div>
-            <div className="flex gap-2 justify-end">
-              <button className="px-3 py-1 rounded border" onClick={async () => {
-                try {
-                  const res = await fetch(`/api/copyrights/${copyright._id}/publish`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ isPublic, documentType: docType })
-                  })
-                  if (!res.ok) throw new Error('Failed')
-                  // revalidate list
-                  mutate('/api/copyrights')
-                  setOpen(false)
-                } catch (err) {
-                  console.error(err)
-                  alert('Failed to update publish settings')
-                }
-              }}>Save</button>
-            </div>
-          </div>
-        )}
+          )}
 
         <AlertDialogFooter>
           {/* Delete button for the owning student when the filing is not approved */}

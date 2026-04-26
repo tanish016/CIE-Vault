@@ -71,7 +71,8 @@ function resolveFieldKey(rawKey) {
 
   if (key === "RECEIPTNO" || key === "RECEIPTNUMBER") return "receiptNumber";
   if (key === "FILINGDATE") return "filingDate";
-  if (key === "USER" || key === "USERNAME" || key === "APPLICANT" || key === "REGISTRANT") return "user";
+  if (key === "USER" || key === "USERNAME") return "user";
+  if (key === "APPLICANT" || key === "REGISTRANT") return "registrant";
   if (key === "FORM" || key === "FORMNO" || key === "FORMNUMBER") return "form";
   if (key === "DIARYNO" || key === "DIARYNUMBER") return "diaryNumber";
   if (key === "REQUESTNO" || key === "REQUESTNUMBER") return "requestNumber";
@@ -94,10 +95,113 @@ function extractReceiptFields(text) {
     requestNumber: "",
   };
 
+  const stripLeadingPunctuation = (value) => String(value || "").replace(/^[\s:=\-]+/, "").trim();
+
+  const hasHeaderNoise = (value) => {
+    const token = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!token) return true;
+    const noisy = ["DIARYNO", "REQUESTNO", "TITLE", "AMOUNTRUPEES", "FORM", "RECEIPTNO", "FILINGDATE"];
+    let hits = 0;
+    for (const n of noisy) {
+      if (token.includes(n)) hits += 1;
+    }
+    return hits >= 2;
+  };
+
+  const fieldValidators = {
+    receiptNumber: (value) => /^\d{4,12}$/.test(value),
+    filingDate: (value) => /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(value),
+    user: (value) => /^[A-Za-z][A-Za-z\s.]{1,60}$/.test(value) && !hasHeaderNoise(value),
+    form: (value) => /^FORM(?:\s+|[-:])?[A-Z0-9\-./]+$/i.test(value),
+    diaryNumber: (value) => /(?:[A-Z]{1,4}-)?\d+\/\d{4}-[A-Z]{2,}(?:\/[A-Z]{2,})?/i.test(value),
+    requestNumber: (value) => /^\d{4,12}$/.test(value),
+    filingNumber: (value) => /^[A-Za-z0-9\-/]{4,80}$/.test(value) && !hasHeaderNoise(value),
+    title: (value) => value.length >= 2 && value.length <= 200 && !hasHeaderNoise(value),
+    registrant: (value) => value.length >= 2 && value.length <= 120 && !hasHeaderNoise(value),
+  };
+
   const assign = (field, value) => {
-    const clean = normalizeExtractedValue(value);
-    if (!field || !clean) return;
+    if (!field || value == null) return;
+    const clean = normalizeExtractedValue(stripLeadingPunctuation(value));
+    if (!clean) return;
+    if (hasHeaderNoise(clean)) return;
+    const validator = fieldValidators[field];
+    if (validator && !validator(clean)) return;
     if (!output[field]) output[field] = clean;
+  };
+
+  const parseSingleLineFieldValue = (line) => {
+    const src = String(line || "").trim();
+    if (!src) return;
+
+    const patterns = [
+      { field: "receiptNumber", re: /^RECEIPT\s*NO\.?\s*[:=-]?\s*(\d{4,12})$/i },
+      { field: "filingDate", re: /^FILING\s*DATE\s*[:=-]?\s*([0-9]{1,2}[\/-][0-9]{1,2}[\/-][0-9]{2,4})$/i },
+      { field: "form", re: /^FORM(?:\s*(?:NO\.?|NUMBER))?\s*[:=-]?\s*([A-Z0-9\-./]+)$/i },
+      { field: "diaryNumber", re: /^DIARY\s*(?:NO\.?|NUMBER)?\s*[:=-]?\s*([A-Z0-9\-/]+)$/i },
+      { field: "requestNumber", re: /^REQUEST\s*(?:NO\.?|NUMBER)?\s*[:=-]?\s*(\d{4,12})$/i },
+      { field: "title", re: /^(?:TITLE|TITLED)\s*[:=-]?\s*(.+)$/i },
+      { field: "registrant", re: /^(?:APPLICANT|REGISTRANT)\s*[:=-]?\s*(.+)$/i },
+      { field: "user", re: /^USER(?:\s*NAME)?\s*[:=-]?\s*(.+)$/i },
+    ];
+
+    for (const p of patterns) {
+      const m = src.match(p.re);
+      if (m && m[1]) {
+        assign(p.field, m[1]);
+        break;
+      }
+    }
+  };
+
+  const splitTableCells = (line) => {
+    const raw = String(line || "").trim();
+    if (!raw) return [];
+
+    if (raw.includes("|")) {
+      return raw
+        .split("|")
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+
+    return raw
+      .split(/\t+|\s{2,}/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  };
+
+  const isSeparatorLine = (line) => {
+    const compact = String(line || "").replace(/\s+/g, "");
+    return !!compact && /^[-|=+_]+$/.test(compact);
+  };
+
+  const parseLabeledSegments = (line) => {
+    const normalizedLine = String(line || "").replace(/\s+/g, " ").trim();
+    if (!normalizedLine) return;
+
+    const labels = [
+      "RECEIPT\s*NO\\.?",
+      "FILING\s*DATE",
+      "USER(?:\s*NAME)?",
+      "APPLICANT",
+      "REGISTRANT",
+      "FORM(?:\s*(?:NO\\.?|NUMBER))?",
+      "DIARY\s*(?:NO\\.?|NUMBER)?",
+      "REQUEST\s*(?:NO\\.?|NUMBER)?",
+      "FILING\s*(?:NO\\.?|NUMBER)?",
+      "REGISTRATION\s*NO\\.?",
+      "TITLE",
+      "TITLED",
+    ];
+
+    const re = new RegExp(`(${labels.join("|")})\\s*[:=-]\\s*(.+?)(?=\\s+(?:${labels.join("|")})\\s*[:=-]|$)`, "gi");
+    let match = re.exec(normalizedLine);
+    while (match) {
+      const field = resolveFieldKey(match[1]);
+      if (field) assign(field, match[2]);
+      match = re.exec(normalizedLine);
+    }
   };
 
   const lines = String(text || "")
@@ -105,14 +209,57 @@ function extractReceiptFields(text) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  // Parse table-style rows where key/value pairs are separated by wide spacing.
+  // Parse vertical key/value format:
+  // RECEIPT NO
+  // : 239643
+  for (let i = 0; i < lines.length; i += 1) {
+    const field = resolveFieldKey(lines[i]);
+    if (!field) continue;
+
+    const next = lines[i + 1] || "";
+    const afterNext = lines[i + 2] || "";
+    if (/^[:=-]\s*/.test(next)) {
+      const sameLineValue = stripLeadingPunctuation(next);
+      if (sameLineValue) {
+        assign(field, sameLineValue);
+      } else if (afterNext && !isSeparatorLine(afterNext)) {
+        assign(field, afterNext);
+      }
+    } else if (next && !isSeparatorLine(next)) {
+      assign(field, next);
+    }
+  }
+
+  // Parse rows where each line itself has key/value chunks.
   for (const line of lines) {
-    const cols = line.split(/\t+|\s{2,}/).map((x) => x.trim()).filter(Boolean);
+    parseSingleLineFieldValue(line);
+    parseLabeledSegments(line);
+
+    const cols = splitTableCells(line);
     if (cols.length >= 2) {
       for (let i = 0; i < cols.length - 1; i += 2) {
         const field = resolveFieldKey(cols[i]);
         if (field) assign(field, cols[i + 1]);
       }
+    }
+  }
+
+  // Parse header row + value row tables.
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    const current = lines[i];
+    const next = lines[i + 1];
+    if (isSeparatorLine(current) || isSeparatorLine(next)) continue;
+
+    const headerCols = splitTableCells(current);
+    const valueCols = splitTableCells(next);
+    if (headerCols.length < 2 || headerCols.length !== valueCols.length) continue;
+
+    const mappedFields = headerCols.map((col) => resolveFieldKey(col));
+    const mappedCount = mappedFields.filter(Boolean).length;
+    if (mappedCount < 2) continue;
+
+    for (let c = 0; c < mappedFields.length; c += 1) {
+      if (mappedFields[c]) assign(mappedFields[c], valueCols[c]);
     }
   }
 
@@ -127,7 +274,7 @@ function extractReceiptFields(text) {
     ],
     user: [
       /USER\s*:\s*([A-Z][A-Z\s.]*)/i,
-      /(?:User|User\s*Name|Applicant|Registrant)\s*[:\-]?\s*([^\r\n]+)/i,
+      /(?:User|User\s*Name)\s*[:\-]?\s*([^\r\n]+)/i,
     ],
     form: [
       /(Form-[A-ZVIX|]+)/i,
@@ -135,6 +282,7 @@ function extractReceiptFields(text) {
     ],
     diaryNumber: [
       /(\d+\/\d{4}-CO\/SW)/i,
+      /(SW-\d+\/\d{4}-CO)/i,
       /Diary\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
     ],
     requestNumber: [/Request\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i],
@@ -142,10 +290,9 @@ function extractReceiptFields(text) {
       /Filing\s*(?:No\.?|Number)?\s*[:\-]?\s*([^\r\n]+)/i,
       /Registration\s*No\.?\s*[:\-]?\s*([^\r\n]+)/i,
     ],
-    registrant: [/Copyright\s*(?:Reg(?:istration)?\.?\s*of)?\s*[:\-]?\s*([^\r\n]+)/i],
+    registrant: [/(?:Applicant|Registrant)\s*[:\-]?\s*([^\r\n]+)/i],
     title: [
-      /Title\s*"?\s*([^"\n,]+)/i,
-      /([A-Z]+-Vault|[A-Z]+-[A-Za-z]+)/,
+      /Title\s*"?\s*[:\-]?\s*([^"\n,]+)/i,
       /Title\s*[:\-]?\s*([^\r\n]+)/i,
       /Titled\s*[:\-]?\s*([^\r\n]+)/i,
     ],
@@ -168,16 +315,9 @@ function extractReceiptFields(text) {
   }
 
   if (!output.requestNumber) {
-    const reqByPrefix = textValue.match(/CO\/SW\s*(\d+)/i);
-    if (reqByPrefix && reqByPrefix[1]) {
-      assign("requestNumber", reqByPrefix[1]);
-    }
-  }
-
-  if (!output.requestNumber) {
-    const reqSixDigit = textValue.match(/\b(\d{6})\b/);
-    if (reqSixDigit && reqSixDigit[1]) {
-      assign("requestNumber", reqSixDigit[1]);
+    const reqExplicit = textValue.match(/REQUEST\s*(?:NO\.?|NUMBER)?\s*[:=-]?\s*(\d{4,12})/i);
+    if (reqExplicit && reqExplicit[1]) {
+      assign("requestNumber", reqExplicit[1]);
     }
   }
 
