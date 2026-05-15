@@ -342,7 +342,7 @@ export function Navbar() {
                       </DropdownMenuItem>
                     )}
 
-                    {user.role === "student" && (
+                    {user.role === "mentor" && (
                       <DropdownMenuItem asChild className="cursor-pointer py-2">
                         <Link to="/plagiarism-check" className="flex items-center gap-2">
                           <Eye className="h-4 w-4 text-muted-foreground" />

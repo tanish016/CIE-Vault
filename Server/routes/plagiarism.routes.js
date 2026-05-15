@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const pdfParse = require('pdf-parse');
 
 const Copyright = require('../models/Copyright');
+const Comment = require('../models/Comment');
 const { requireAuth } = require('../middlewares/auth');
 const { decryptBuffer } = require('../utils/file-encryption');
 
@@ -46,8 +47,10 @@ router.post('/check', requireAuth, async (req, res, next) => {
     const doc = await Copyright.findById(id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    // Only the owning student may run plagiarism checks on their files
-    if (!doc.student || String(doc.student) !== String(req.user._id)) {
+    // Allow either the owning student or a mentor to run plagiarism checks
+    const isOwnerStudent = doc.student && String(doc.student) === String(req.user._id);
+    const isMentor = req.user && req.user.role === 'mentor';
+    if (!isOwnerStudent && !isMentor) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -60,6 +63,10 @@ router.post('/check', requireAuth, async (req, res, next) => {
     // If Gemini API is configured, try to use it
     const geminiKey = process.env.GEMINI_API_KEY;
     const geminiUrl = process.env.GEMINI_API_URL;
+    let percentage = null;
+    let advice = '';
+    let source = '';
+
     if (geminiKey && geminiUrl) {
       try {
         // We send a prompt asking for JSON output with percentage and advice.
@@ -86,7 +93,9 @@ router.post('/check', requireAuth, async (req, res, next) => {
         }
 
         if (parsed && typeof parsed.percentage === 'number') {
-          return res.json({ percentage: parsed.percentage, advice: parsed.advice || '', source: 'gemini' });
+          percentage = parsed.percentage;
+          advice = parsed.advice || '';
+          source = 'gemini';
         }
         // otherwise fall through to local analysis
       } catch (err) {
@@ -115,18 +124,32 @@ router.post('/check', requireAuth, async (req, res, next) => {
       }
     }
 
-    const percentage = Math.round(highestOverlapPercent * 100) / 100;
-    // Simple advice heuristics
-    let advice = 'Good job. Keep citing your sources and paraphrasing where appropriate.';
-    if (percentage > 40) {
-      advice = 'High similarity detected. Consider rewriting sections, adding citations, and quoting sources.';
-    } else if (percentage > 15) {
-      advice = 'Moderate similarity. Paraphrase and add clearer citations to reduce overlap.';
-    } else if (percentage > 5) {
-      advice = 'Minor similarity. Verify citations and rephrase small matching sections.';
+    if (percentage == null) {
+      percentage = Math.round(highestOverlapPercent * 100) / 100;
+      source = 'local';
+      // Simple advice heuristics
+      advice = 'Good job. Keep citing your sources and paraphrasing where appropriate.';
+      if (percentage > 40) {
+        advice = 'High similarity detected. Consider rewriting sections, adding citations, and quoting sources.';
+      } else if (percentage > 15) {
+        advice = 'Moderate similarity. Paraphrase and add clearer citations to reduce overlap.';
+      } else if (percentage > 5) {
+        advice = 'Minor similarity. Verify citations and rephrase small matching sections.';
+      }
     }
 
-    return res.json({ percentage, advice, source: 'local' });
+    // If a mentor ran the check, save the result as a Comment on the document
+    try {
+      if (isMentor) {
+        const commenterName = req.user.name || 'Mentor';
+        const commentText = `Plagiarism check by ${commenterName}: ${percentage}% — ${advice}`;
+        await Comment.create({ copyright: doc._id, mentor: req.user._id, text: commentText });
+      }
+    } catch (err) {
+      console.warn('Failed to save plagiarism comment:', err && err.message ? err.message : err);
+    }
+
+    return res.json({ percentage, advice, source });
   } catch (error) {
     return next(error);
   }

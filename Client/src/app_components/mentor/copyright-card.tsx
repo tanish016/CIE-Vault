@@ -103,6 +103,7 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
   const [showCredentials, setShowCredentials] = useState(false)
   const [showReport, setShowReport] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
+  const [showDebug, setShowDebug] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<"approved" | "rejected" | null>(null)
 
   useEffect(() => {
@@ -142,6 +143,63 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
   const isRequestedAccess = accessLevel === "requested"
   const isFileHidden = !copyright.fileUrl || copyright.fileUrl.includes("[Hidden")
   const { user } = useAuth()
+  // Normalize/extract helpful display values for OCR results
+  const rawExtractedTitle = (copyright as any).extractedTitle || "";
+  const extractedTitleIsNoisy = (() => {
+    const t = rawExtractedTitle || "";
+    if (!t) return false;
+    const lower = t.toLowerCase();
+    // Common noise tokens and concatenated header noise from OCR
+    const noiseKeywords = ["amount", "rupee", "rs", "fees", "diary", "request", "receipt", "filingdate", "filing date", "title"];
+    let hits = 0;
+    for (const k of noiseKeywords) if (lower.includes(k)) hits += 1;
+    // If multiple noise tokens present, consider it noisy
+    if (hits >= 2) return true;
+    // Short numeric titles or purely punctuation are noisy
+    if (/^[\W\d]{1,20}$/.test(t.trim())) return true;
+    return false;
+  })();
+
+  const displayExtractedTitle = rawExtractedTitle && !extractedTitleIsNoisy ? rawExtractedTitle : copyright.title || "-";
+
+  const rawRequestNo = (copyright as any).extractedRequestNumber || "";
+  // If request number is missing, try to heuristically find a 4-12 digit number
+  // in other extracted fields (common OCR fallback).
+  const findRequestIn = [
+    (copyright as any).extractedDiaryNumber,
+    (copyright as any).extractedFilingNumber,
+    (copyright as any).extractedReceiptNumber,
+    (copyright as any).extractedTitle,
+  ].join(" ") || "";
+  const fallbackRequestMatch = findRequestIn.match(/(\d{4,12})/);
+  const displayRequestNo = rawRequestNo && rawRequestNo.trim() !== "" ? rawRequestNo : (fallbackRequestMatch ? fallbackRequestMatch[1] : "-");
+
+  const rawForm = (copyright as any).extractedForm || "";
+  // If `form` is missing, attempt to detect it across several fields (supports roman numerals)
+  let displayForm = rawForm && rawForm.trim() !== "" ? rawForm : "-";
+  if (displayForm === "-") {
+    const searchFields = [
+      (copyright as any).extractedForm || "",
+      rawExtractedTitle || "",
+      copyright.title || "",
+      (copyright as any).extractedFilingNumber || "",
+      (copyright as any).extractedDiaryNumber || "",
+    ].join(" ");
+    // Match patterns like: Form XIV, Form-XIV, FORM - XIV, Form: XIV, FormXIV
+    const m = searchFields.match(/Form\s*[-:\/]?\s*([A-Z0-9IVXLCDM]+(?:[-\s]?[A-Z0-9IVXLCDM]+)*)/i);
+    if (m && m[1]) {
+      // Normalize to single token like "Form-XIV"
+      const token = m[1].toUpperCase().replace(/\s+/g, "-");
+      displayForm = `Form-${token}`;
+    }
+  } else {
+    // Ensure consistent formatting when server provided a raw form (e.g. "XIV" -> "Form-XIV")
+    const val = displayForm.trim();
+    if (!/^Form[-\s]/i.test(val)) {
+      const normalized = val.toUpperCase().replace(/^[:\s-]+|[\s]+/g, "");
+      displayForm = `Form-${normalized}`;
+    }
+  }
   // Mentors should not see a direct download/view button from the mentor dashboard
   // Allow mentors to view file when they have full access or when the item was requested/assigned to them (cross-college request)
   const canViewFile = !isFileHidden && (isFullAccess || isRequestedAccess || user?.role !== "mentor")
@@ -232,8 +290,23 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                         AI PDF Insight
                       </h4>
+                      <div className="ml-auto">
+                        <Button size="xs" variant="outline" onClick={() => setShowDebug(!showDebug)}>
+                          {showDebug ? 'Hide JSON' : 'Show JSON'}
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid gap-2 rounded-lg bg-card border p-3 text-sm shadow-sm">
+                      {showDebug && (
+                        <pre className="max-h-48 overflow-auto rounded bg-[#0b1220] p-2 text-xs text-white/90">{JSON.stringify({
+                          extractedTitle: copyright.extractedTitle,
+                          extractedForm: (copyright as any).extractedForm,
+                          extractedRequestNumber: (copyright as any).extractedRequestNumber,
+                          extractedDiaryNumber: (copyright as any).extractedDiaryNumber,
+                          extractedFilingNumber: (copyright as any).extractedFilingNumber,
+                          extractedReceiptNumber: (copyright as any).extractedReceiptNumber,
+                        }, null, 2)}</pre>
+                      )}
                       {(copyright as any).extractedReceiptNumber && (
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Receipt #:</span>
@@ -252,22 +325,22 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
                           <span className="text-foreground">{(copyright as any).extractedUser}</span>
                         </div>
                       )}
-                      {(copyright as any).extractedForm && (
+                      {displayForm !== "-" && (
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Form:</span>
-                          <span className="text-foreground">{(copyright as any).extractedForm}</span>
+                          <span className="text-foreground">{displayForm}</span>
                         </div>
                       )}
-                      {(copyright as any).extractedRequestNumber && (
+                      {displayRequestNo !== "-" && (
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Request #:</span>
-                          <span className="text-foreground">{(copyright as any).extractedRequestNumber}</span>
+                          <span className="text-foreground">{displayRequestNo}</span>
                         </div>
                       )}
-                      {copyright.extractedTitle && (
+                      {displayExtractedTitle && (
                         <div className="grid grid-cols-[80px_1fr]">
                           <span className="font-semibold text-muted-foreground">Title:</span>
-                          <span className="text-foreground">{copyright.extractedTitle}</span>
+                          <span className="text-foreground">{displayExtractedTitle}</span>
                         </div>
                       )}
                       {copyright.extractedFilingNumber && (
@@ -449,31 +522,54 @@ export function CopyrightCard({ copyright, accessLevel, onStatusUpdate, forceExp
 
                   <div className="rounded border bg-card p-3">
                     <div className="text-sm font-semibold">Receipt Extracted Details</div>
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="w-full min-w-[520px] text-sm">
-                        <thead>
-                          <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th className="px-2 py-2 font-semibold">Receipt No.</th>
-                            <th className="px-2 py-2 font-semibold">Filing Date</th>
-                            <th className="px-2 py-2 font-semibold">User</th>
-                            <th className="px-2 py-2 font-semibold">Form</th>
-                            <th className="px-2 py-2 font-semibold">Diary No.</th>
-                            <th className="px-2 py-2 font-semibold">Request No.</th>
-                            <th className="px-2 py-2 font-semibold">Title</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr className="align-top">
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedReceiptNumber || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedFilingDate || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedUser || (copyright as any).extractedRegistrant || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedForm || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedDiaryNumber || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{(copyright as any).extractedRequestNumber || "-"}</td>
-                            <td className="px-2 py-2 text-foreground">{copyright.extractedTitle || "-"}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div className="mt-3 grid gap-3 text-sm">
+                      <div className="mb-2">
+                        {rawExtractedTitle && !extractedTitleIsNoisy && rawExtractedTitle !== copyright.title ? (
+                          <>
+                            <div className="text-xs font-semibold text-muted-foreground">Extracted Title</div>
+                            <div className="text-sm font-medium text-foreground">{rawExtractedTitle}</div>
+                            <div className="text-xs text-muted-foreground mt-1">Original Title: {copyright.title}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs font-semibold text-muted-foreground">Title</div>
+                            <div className="text-sm font-medium text-foreground">{displayExtractedTitle}</div>
+                          </>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="flex items-start gap-2">
+                          <span className="font-semibold text-muted-foreground w-28">Receipt No.</span>
+                          <span className="text-foreground">{(copyright as any).extractedReceiptNumber || "-"}</span>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <span className="font-semibold text-muted-foreground w-28">Filing Date</span>
+                          <span className="text-foreground">{(copyright as any).extractedFilingDate || "-"}</span>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          <span className="font-semibold text-muted-foreground w-28">User</span>
+                          <span className="text-foreground">{(copyright as any).extractedUser || (copyright as any).extractedRegistrant || "-"}</span>
+                        </div>
+
+
+                        <div className="flex items-start gap-2">
+                          <span className="font-semibold text-muted-foreground w-28">Diary No.</span>
+                          <span className="text-foreground">{(copyright as any).extractedDiaryNumber || "-"}</span>
+                        </div>
+
+
+                        <div className="flex items-start gap-2">
+                          <span className="font-semibold text-muted-foreground w-28">Form</span>
+                          <span className="text-foreground">{displayForm}</span>
+                        </div>
+                                              <div className="flex items-start gap-2">
+                                                <span className="font-semibold text-muted-foreground w-28">Request No.</span>
+                                                <span className="text-foreground">{displayRequestNo}</span>
+                                              </div>
+                                              {/* Title is shown above for clearer layout */}
+                      </div>
                     </div>
                   </div>
                 </section>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useAuth } from "@/context/auth-context"
 import { Navbar } from "./navbar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +17,19 @@ interface Doc {
 }
 
 export default function PlagiarismCheck() {
+  const { user, isLoading } = useAuth()
+  // Restrict access: only mentors may run plagiarism checks
+  if (!isLoading && user && user.role !== 'mentor') {
+    return (
+      <>
+        <Navbar />
+        <div className="mx-auto max-w-4xl py-8 px-4">
+          <h2 className="mb-2 text-2xl font-bold">Plagiarism Check</h2>
+          <div className="rounded border bg-muted/5 p-4 text-sm text-muted-foreground">Only mentors can access plagiarism checks. If you are a mentor, sign in with a mentor account.</div>
+        </div>
+      </>
+    )
+  }
   const [docs, setDocs] = useState<Doc[]>([])
   const [loading, setLoading] = useState(false)
   const [checkingId, setCheckingId] = useState<string | null>(null)
